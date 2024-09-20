@@ -20,10 +20,10 @@ lazy_static! {
     // <(src_chain, dst_chain), (src_chain_cost, dst_chain_cost)> // cost in USDT
     pub static ref FLAT_FEES: Arc<RwLock<HashMap<(String, String), (u32, u32)>>> = {
         let mut m = HashMap::new();
-        m.insert(("ethereum".to_string(), "ethereum".to_string()), (0, 3000000));       // 0$ 3$
-        m.insert(("solana".to_string(), "solana".to_string()), (0, 200000));            // 0$ 0.2$
-        m.insert(("ethereum".to_string(), "solana".to_string()), (1000000, 100000));    // 1$ 0.1$
-        m.insert(("solana".to_string(), "ethereum".to_string()), (100000, 2000000));    // 0.1$ 2$
+        m.insert(("ethereum".to_string(), "ethereum".to_string()), (0, 5000000));      // 0$ 5$
+        m.insert(("solana".to_string(), "solana".to_string()), (1, 1));                 // 1$ 1$
+        m.insert(("ethereum".to_string(), "solana".to_string()), (0, 0));        // 0$ 1$
+        m.insert(("solana".to_string(), "ethereum".to_string()), (0, 0));  // 1$ 10$
         Arc::new(RwLock::new(m))
     };
 }
@@ -35,8 +35,12 @@ pub async fn get_simulate_swap_intent(
     bridge_token: &String,
 ) -> String {
     // Extracting values from OperationInput
-    let (token_in, amount_in) = match &intent_info.inputs {
-        OperationInput::SwapTransfer(input) => (input.token_in.clone(), input.amount_in.clone()),
+    let (token_in, amount_in, src_chain_user) = match &intent_info.inputs {
+        OperationInput::SwapTransfer(input) => (
+            input.token_in.clone(),
+            input.amount_in.clone(),
+            input.src_chain_user.clone(),
+        ),
         OperationInput::Lend(_) => todo!(),
         OperationInput::Borrow(_) => todo!(),
     };
@@ -59,10 +63,10 @@ pub async fn get_simulate_swap_intent(
         if src_chain == "ethereum" {
             amount_out_src_chain =
                 ethereum_simulate_swap(&token_in, &amount_in, bridge_token_address_src).await;
-        } else if src_chain == "solana" {
+        } else if src_chain == "solana"  {
             amount_out_src_chain = BigInt::from_str(
                 &solana_simulate_swap(
-                    &dst_chain_user,
+                    &src_chain_user,
                     &token_in,
                     &bridge_token_address_src,
                     BigInt::from_str(&amount_in).unwrap().to_u64().unwrap(),
@@ -101,23 +105,27 @@ pub async fn get_simulate_swap_intent(
         - (BigInt::from(flat_fees.0)
             + BigInt::from(flat_fees.1)
             + (amount_out_src_chain * BigInt::from(comission) / BigInt::from(100_000)));
+
     let mut final_amount_out = amount_in_dst_chain.to_string();
 
-    if !bridge_token_address_dst.eq_ignore_ascii_case(&token_out) {
+    if !bridge_token_address_dst.eq_ignore_ascii_case(&token_out)
+    {
         // simulate USDT -> token_out
         if dst_chain == "ethereum" {
             final_amount_out =
-                ethereum_simulate_swap(bridge_token_address_src, &final_amount_out, &token_out)
+                ethereum_simulate_swap(bridge_token_address_dst, &final_amount_out, &token_out)
                     .await
                     .to_string();
         } else if dst_chain == "solana" {
-            final_amount_out = solana_simulate_swap(
-                &dst_chain_user,
-                bridge_token_address_dst,
-                &token_out,
-                amount_in_dst_chain.to_u64().unwrap(),
-            )
-            .await;
+            if final_amount_out != "0" {
+                final_amount_out = solana_simulate_swap(
+                    &dst_chain_user,
+                    bridge_token_address_dst,
+                    &token_out,
+                    amount_in_dst_chain.to_u64().unwrap(),
+                )
+                .await;
+            }
         }
     }
 

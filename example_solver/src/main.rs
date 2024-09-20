@@ -137,39 +137,39 @@ async fn main() {
 
                     if let Some(amount) = amount {
                         let msg = parsed
-                        .get("msg")
-                        .unwrap()
-                        .get("msg")
-                        .and_then(Value::as_str)
-                        .unwrap()
-                        .to_string();
+                            .get("msg")
+                            .unwrap()
+                            .get("msg")
+                            .and_then(Value::as_str)
+                            .unwrap()
+                            .to_string();
 
-                    if msg.contains("won") {
-                        let intent;
+                        if msg.contains("won") {
+                            let intent;
+                            {
+                                let intents = INTENTS.read().await;
+                                intent = intents.get(intent_id).unwrap().clone();
+                                drop(intents);
+                            }
+
+                            if intent.dst_chain == "solana" {
+                                handle_solana_execution(&intent, intent_id, amount)
+                                    .await
+                                    .unwrap();
+                            } else if intent.dst_chain == "ethereum" {
+                                handle_ethereum_execution(&intent, intent_id, amount)
+                                    .await
+                                    .unwrap();
+                            } 
+
+                            // ws_sender.send(Message::text(msg)).await.expect("Failed to send message");
+                        }
+
                         {
-                            let intents = INTENTS.read().await;
-                            intent = intents.get(intent_id).unwrap().clone();
+                            let mut intents = INTENTS.write().await;
+                            intents.remove(&intent_id.to_string());
                             drop(intents);
                         }
-
-                        if intent.dst_chain == "solana" {
-                            handle_solana_execution(&intent, intent_id, amount)
-                                .await
-                                .unwrap();
-                        } else if intent.dst_chain == "ethereum" {
-                            handle_ethereum_execution(&intent, intent_id, amount)
-                                .await
-                                .unwrap();
-                        }
-
-                        // ws_sender.send(Message::text(msg)).await.expect("Failed to send message");
-                    }
-
-                    {
-                        let mut intents = INTENTS.write().await;
-                        intents.remove(&intent_id.to_string());
-                        drop(intents);
-                    }
                     }
                 }
             }
@@ -180,4 +180,3 @@ async fn main() {
 
     println!("Auctioner went down, please reconnect");
 }
-
