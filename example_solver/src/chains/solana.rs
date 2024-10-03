@@ -14,6 +14,7 @@ pub mod solana_chain {
     use solana_client::nonblocking::rpc_client::RpcClient;
     use solana_client::rpc_config::RpcSendTransactionConfig;
     use solana_sdk::commitment_config::CommitmentConfig;
+    use solana_sdk::compute_budget::ComputeBudgetInstruction;
     use solana_sdk::pubkey::Pubkey;
     use solana_sdk::signature::{Keypair, Signer};
     use solana_sdk::transaction::Transaction;
@@ -22,7 +23,9 @@ pub mod solana_chain {
     use std::env;
     use std::str::FromStr;
     use std::sync::Arc;
-    use solana_sdk::compute_budget::ComputeBudgetInstruction;
+    use std::time::Duration;
+
+    // DUMMY MANTIS = 78grvu3nEsQsx3tdMB8BqedJF2hyJx1GPgjGQZWDrDTS
 
     #[derive(Debug, Serialize, Deserialize)]
     struct SwapData {
@@ -81,78 +84,101 @@ pub mod solana_chain {
             amount_in = transfer_input.amount_in.clone();
         }
 
-        let mut ok = true;
-        if token_out != usdt_contract_address {
-            if let Err(e) = solana_trasnfer_swap(intent.clone(), amount).await {
-                println!(
+        // swap USDT -> token_out
+        if !token_out.eq_ignore_ascii_case(usdt_contract_address) {
+            if let Err(e) = solana_transfer_swap(intent.clone(), amount).await {
+                return Err(format!(
                     "Error occurred on Solana swap USDT -> token_out (manual swap required): {}",
                     e
-                );
-                ok = false;
+                ));
             }
         }
 
-        if ok {
-            if let Err(e) = solana_send_funds_to_user(
-                intent_id,
-                &token_in,
-                &token_out,
-                &user_account,
-                SOLVER_ADDRESSES.get(1).unwrap().to_string(),
-                intent.src_chain == intent.dst_chain,
-                rpc_url,
-                Pubkey::from_str("yAJJJMZmjWSQjvq8WuARKygH8KJkeQTXB5BGJBJcR4T").unwrap(),
-            )
-            .await
-            {
-                println!(
-                    "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
-                    e
-                );
-            } else if token_in != usdt_contract_address {
-                let memo = format!(
-                    r#"{{"user_account": "{}","token_in": "{}","token_out": "{}","amount": {},"slippage_bps": {}}}"#,
-                    SOLVER_ADDRESSES.get(1).unwrap(),
-                    token_in,
-                    usdt_contract_address,
-                    amount_in,
-                    100
-                );
+        let solver_out = if intent.src_chain == "ethereum" {
+            SOLVER_ADDRESSES.get(0).unwrap()
+        } else if intent.src_chain == "solana" {
+            SOLVER_ADDRESSES.get(1).unwrap()
+        } else {
+            panic!("chain not supported, this should't happen");
+        };
 
-                if let Err(e) = jupiter_swap(&memo, &client, &from_keypair, SwapMode::ExactIn).await
-                {
-                    println!("Error on Solana swap token_in -> USDT: {e}");
-                } else {
-                    let balance_post = client
-                        .get_token_account_balance(&usdt_token_account)
-                        .await
-                        .unwrap()
-                        .ui_amount
-                        .unwrap();
+        // solver -> token_out -> user | user -> token_in -> solver
+        if let Err(e) = solana_send_funds_to_user(
+            intent_id,
+            &token_in,
+            &token_out,
+            &user_account,
+            solver_out.to_string(),
+            intent.src_chain == intent.dst_chain,
+            rpc_url,
+            Pubkey::from_str("yAJJJMZmjWSQjvq8WuARKygH8KJkeQTXB5BGJBJcR4T").unwrap(),
+            amount.parse::<u64>().unwrap()
+        )
+        .await
+        {
+            return Err(format!(
+                "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
+                e
+            ));
+        // swap token_in -> USDT
+        } else if intent.src_chain == intent.dst_chain
+            && !token_in.eq_ignore_ascii_case(usdt_contract_address)
+        {
+            let memo = format!(
+                r#"{{"user_account": "{}","token_in": "{}","token_out": "{}","amount": {},"slippage_bps": {}}}"#,
+                SOLVER_ADDRESSES.get(1).unwrap(),
+                token_in,
+                usdt_contract_address,
+                amount_in,
+                100
+            );
 
-                    let balance = if balance_post >= balance_ant {
-                        balance_post - balance_ant
-                    } else {
-                        balance_ant - balance_post
-                    };
-
-                    println!(
-                        "You have {} {} USDT on intent {intent_id}",
-                        if balance_post >= balance_ant {
-                            "won"
-                        } else {
-                            "lost"
-                        },
-                        balance
-                    );
-                }
+            if let Err(e) = jupiter_swap(&memo, &client, &from_keypair, SwapMode::ExactIn).await {
+                return Err(format!("Error on Solana swap token_in -> USDT: {e}"));
             }
+        } else {
+            println!("You sent token_out to user for intent_id {intent_id}. You will receive token_in from user on src_chain");
+        }
+
+        if intent.src_chain == intent.dst_chain {
+            let mut balance_post = client
+                .get_token_account_balance(&usdt_token_account)
+                .await
+                .unwrap()
+                .ui_amount
+                .unwrap();
+
+            let balance = if balance_post > balance_ant {
+                balance_post - balance_ant
+            } else if balance_post < balance_ant {
+                balance_ant - balance_post
+            } else {
+                std::thread::sleep(Duration::from_secs(5));
+                balance_post = client
+                    .get_token_account_balance(&usdt_token_account)
+                    .await
+                    .unwrap()
+                    .ui_amount
+                    .unwrap();
+
+                balance_post - balance_ant
+            };
+
+            println!(
+                "You have {} {} USDT on intent {intent_id}",
+                if balance_post >= balance_ant {
+                    "won"
+                } else {
+                    "lost"
+                },
+                balance
+            );
         }
 
         Ok(())
     }
 
-    pub async fn solana_trasnfer_swap(intent: PostIntentInfo, amount: &str) -> Result<(), String> {
+    pub async fn solana_transfer_swap(intent: PostIntentInfo, amount: &str) -> Result<(), String> {
         let rpc_url = env::var("SOLANA_RPC").map_err(|_| "SOLANA_RPC must be set".to_string())?;
 
         let from_keypair_str =
@@ -358,6 +384,7 @@ pub mod solana_chain {
         single_domain: bool,
         rpc_url: String,
         program_id: Pubkey,
+        amount_out: u64
     ) -> Result<(), String> {
         // Load the keypair from environment variable
         let solana_keypair = env::var("SOLANA_KEYPAIR")
@@ -460,17 +487,16 @@ pub mod solana_chain {
             let auctioneer_token_in_account;
             let solver_token_in_account;
             let token_in;
-            let mut ibc_program = None;
-            let mut receiver = None;
-            let mut storage = None;
-            let mut trie = None;
-            let mut chain = None;
-            let mut mint_authority = None;
-            let dummy_token_mint = Some(Pubkey::from_str("3dsg7C6LGnCL17i4a4qU5N3n6RsKR7AFpVUyRc1hToAQ").unwrap());
-            let mut escrow_account = None;
-            let mut receiver_token_account = None;
-            let mut fee_collector = None;
-            let mut hashed_full_denom = None;
+            let ibc_program;
+            let receiver;
+            let storage;
+            let trie;
+            let chain;
+            let mint_authority;
+            let dummy_token_mint = Some(Pubkey::from_str("2Mva3LWGphkJvtZPyH3TGNsTXguvJ17G1HnxBf9AZbm9").unwrap());
+            let escrow_account;
+            let receiver_token_account;
+            let fee_collector;
 
             if !single_domain {
                 token_in = None;
@@ -487,7 +513,6 @@ pub mod solana_chain {
                 escrow_account = Some(_escrow_account);
                 receiver_token_account = Some(_receiver_token_account);
                 fee_collector = Some(_fee_collector);
-                hashed_full_denom = Some(_hashed_full_denom);
             } else {
                 token_in = Some(Pubkey::from_str(&token_in_mint).unwrap());
 
@@ -508,7 +533,6 @@ pub mod solana_chain {
                 escrow_account = Some(_escrow_account);
                 receiver_token_account = Some(_receiver_token_account);
                 fee_collector = Some(_fee_collector);
-                hashed_full_denom = Some(_hashed_full_denom);
             }
 
             program
@@ -544,8 +568,9 @@ pub mod solana_chain {
                 })
                 .args(bridge_escrow::instruction::SendFundsToUser {
                     intent_id: intent_id.to_string(),
-                    hashed_full_denom: hashed_full_denom,
+                    amount_out,
                     solver_out: Some(solver_out),
+                    single_domain
                 })
                 .payer(solver_clone.clone())
                 .signer(&*solver_clone)

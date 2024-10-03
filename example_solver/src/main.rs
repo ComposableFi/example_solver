@@ -2,6 +2,7 @@ mod chains;
 mod routers;
 
 use crate::chains::ethereum::ethereum_chain::handle_ethereum_execution;
+use crate::chains::mantis::mantis_chain::handle_mantis_execution;
 use crate::chains::solana::solana_chain::handle_solana_execution;
 use crate::chains::OperationInput;
 use crate::chains::OperationOutput;
@@ -157,10 +158,14 @@ async fn main() {
                                     .await
                                     .unwrap();
                             } else if intent.dst_chain == "ethereum" {
-                                handle_ethereum_execution(&intent, intent_id, amount)
+                                handle_ethereum_execution(&intent, intent_id, amount, intent.src_chain == intent.dst_chain)
                                     .await
                                     .unwrap();
-                            } 
+                            } else if intent.dst_chain == "mantis" {
+                                handle_mantis_execution(&intent, intent_id, amount)
+                                    .await
+                                    .unwrap();
+                            }
 
                             // ws_sender.send(Message::text(msg)).await.expect("Failed to send message");
                         }

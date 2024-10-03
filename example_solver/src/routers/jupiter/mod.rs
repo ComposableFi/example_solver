@@ -461,13 +461,13 @@ impl Memo {
 }
 
 pub async fn jupiter_swap(
-    memo: &str,
+    _memo: &str,
     rpc_client: &RpcClient,
     keypair: &Keypair,
     swap_mode: SwapMode,
 ) -> core::result::Result<(), String> {
     // Parse the memo JSON
-    let memo = Memo::from_json(&memo).map_err(|e| format!("Failed to parse memo: {}", e))?;
+    let memo = Memo::from_json(&_memo).map_err(|e| format!("Failed to parse memo: {}", e))?;
 
     let only_direct_routes = false;
     let quotes = quote(

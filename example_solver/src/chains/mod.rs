@@ -1,4 +1,5 @@
 pub mod ethereum;
+pub mod mantis;
 pub mod solana;
 
 use lazy_static::lazy_static;

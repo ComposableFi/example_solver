@@ -103,10 +103,10 @@ pub mod paraswap_router {
                         res_data = format!("{}", data.to_string().trim_matches('"'));
                     }
                     None => {
-                        // println!(
-                        //     "Failed getting calldata in Paraswap (weird): {:#}",
-                        //     json_value
-                        // );
+                        println!(
+                            "Failed getting calldata in Paraswap (weird): {:#}",
+                            json_value
+                        );
                     }
                 }
             }

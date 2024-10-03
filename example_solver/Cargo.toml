@@ -32,7 +32,7 @@ strum = "0.26.2"
 strum_macros = "0.26.4"
 secp256k1 = "0.27.0"
 web3 = "0.19.0"
-bridge-escrow = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", package = "bridge-escrow" }
+bridge-escrow = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "upgrade", package = "bridge-escrow" }
 solana-ibc = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", features = ["cpi"] }
 lib = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", features = ["solana-program"] }
 
@@ -49,3 +49,6 @@ lib = { git = "https://github.com/ComposableFi/emulated-light-client.git", branc
 # https://github.com/dalek-cryptography/curve25519-dalek/pull/606
 aes-gcm-siv = { git = "https://github.com/RustCrypto/AEADs", rev = "6105d7a5591aefa646a95d12b5e8d3f55a9214ef" }
 curve25519-dalek = { git = "https://github.com/dalek-cryptography/curve25519-dalek", rev = "8274d5cbb6fc3f38cdc742b4798173895cd2a290" }
+
+
+
