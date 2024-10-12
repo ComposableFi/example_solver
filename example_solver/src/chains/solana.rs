@@ -111,8 +111,7 @@ pub mod solana_chain {
             solver_out.to_string(),
             intent.src_chain == intent.dst_chain,
             rpc_url,
-            Pubkey::from_str("yAJJJMZmjWSQjvq8WuARKygH8KJkeQTXB5BGJBJcR4T").unwrap(),
-            amount.parse::<u64>().unwrap()
+            Pubkey::from_str(&bridge_escrow::ID.to_string()).unwrap(),
         )
         .await
         {
@@ -384,7 +383,6 @@ pub mod solana_chain {
         single_domain: bool,
         rpc_url: String,
         program_id: Pubkey,
-        amount_out: u64
     ) -> Result<(), String> {
         // Load the keypair from environment variable
         let solana_keypair = env::var("SOLANA_KEYPAIR")
@@ -399,7 +397,8 @@ pub mod solana_chain {
         let token_out_mint = token_out_mint.to_string();
         let user = user.to_string();
 
-        let rpc_client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
+        let rpc_client =
+            RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
         let solver_token_in_addr = get_associated_token_address(
             &solver_clone.pubkey(),
             &Pubkey::from_str(&token_in_mint).unwrap(),
@@ -493,7 +492,7 @@ pub mod solana_chain {
             let trie;
             let chain;
             let mint_authority;
-            let dummy_token_mint = Some(Pubkey::from_str("2Mva3LWGphkJvtZPyH3TGNsTXguvJ17G1HnxBf9AZbm9").unwrap());
+            let dummy_token_mint = Some(_dummy_token_mint);
             let escrow_account;
             let receiver_token_account;
             let fee_collector;
@@ -540,7 +539,7 @@ pub mod solana_chain {
                 .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
                 .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
                 .accounts(bridge_escrow::accounts::SplTokenTransfer {
-                    intent: intent_state,
+                    intent: Some(intent_state),
                     auctioneer_state,
                     solver: solver_clone.pubkey(),
                     auctioneer: Pubkey::from_str("5zCZ3jk8EZnJyG7fhDqD6tmqiYTLZjik5HUpGMnHrZfC")
@@ -568,9 +567,8 @@ pub mod solana_chain {
                 })
                 .args(bridge_escrow::instruction::SendFundsToUser {
                     intent_id: intent_id.to_string(),
-                    amount_out,
                     solver_out: Some(solver_out),
-                    single_domain
+                    single_domain,
                 })
                 .payer(solver_clone.clone())
                 .signer(&*solver_clone)

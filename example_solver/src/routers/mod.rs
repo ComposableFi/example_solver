@@ -21,10 +21,10 @@ lazy_static! {
     // <(src_chain, dst_chain), (src_chain_cost, dst_chain_cost)> // cost in USDT
     pub static ref FLAT_FEES: Arc<RwLock<HashMap<(String, String), (u32, u32)>>> = {
         let mut m = HashMap::new();
-        m.insert(("ethereum".to_string(), "ethereum".to_string()), (0, 3000000));       // 0$ 3$
-        m.insert(("solana".to_string(), "solana".to_string()), (0, 200000));            // 0$ 0.2$
-        m.insert(("ethereum".to_string(), "solana".to_string()), (1000000, 100000));    // 1$ 0.1$
-        m.insert(("solana".to_string(), "ethereum".to_string()), (100000, 2000000));    // 0.1$ 2$
+        m.insert(("ethereum".to_string(), "ethereum".to_string()), (0, 0));       // 0$ 3$
+        m.insert(("solana".to_string(), "solana".to_string()), (0, 0));            // 0$ 0.2$
+        m.insert(("ethereum".to_string(), "solana".to_string()), (0, 0));    // 1$ 0.1$
+        m.insert(("solana".to_string(), "ethereum".to_string()), (0, 0));    // 0.1$ 2$
         Arc::new(RwLock::new(m))
     };
 
@@ -162,7 +162,7 @@ pub async fn get_simulate_swap_intent(
         // simulate USDT -> token_out
         if dst_chain == "ethereum" {
             final_amount_out =
-                ethereum_simulate_swap(bridge_token_address_src, &final_amount_out, &token_out)
+                ethereum_simulate_swap(bridge_token_address_dst, &final_amount_out, &token_out)
                     .await
                     .to_string();
         } else if dst_chain == "solana" || dst_chain == "mantis" {

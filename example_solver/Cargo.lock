@@ -893,7 +893,7 @@ dependencies = [
 [[package]]
 name = "bridge-escrow"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1100,7 +1100,7 @@ dependencies = [
 [[package]]
 name = "cf-guest"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -1124,7 +1124,7 @@ dependencies = [
 [[package]]
 name = "cf-guest"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -1365,18 +1365,18 @@ checksum = "c2459377285ad874054d797f3ccebf984978aa39129f6eafde5cdc8315b612f8"
 
 [[package]]
 name = "const_format"
-version = "0.2.32"
+version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3a214c7af3d04997541b18d432afaff4c455e79e2029079647e72fc2bd27673"
+checksum = "50c655d81ff1114fb0dcdea9225ea9f0cc712a6f8d189378e82bdf62a473a64b"
 dependencies = [
  "const_format_proc_macros",
 ]
 
 [[package]]
 name = "const_format_proc_macros"
-version = "0.2.32"
+version = "0.2.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7f6ff08fd20f4f299298a28e2dfa8a8ba1036e6cd2460ac1de7b425d76f2500"
+checksum = "eff1a44b93f47b1bac19a27932f5c591e43d1ba357ee4f61526c8a25603f0eb1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2683,7 +2683,7 @@ dependencies = [
 [[package]]
 name = "guestchain"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -2705,7 +2705,7 @@ dependencies = [
 [[package]]
 name = "guestchain"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -3754,7 +3754,7 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 [[package]]
 name = "lib"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
@@ -3769,7 +3769,7 @@ dependencies = [
 [[package]]
 name = "lib"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
@@ -3936,7 +3936,7 @@ dependencies = [
 [[package]]
 name = "memory"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "derive_more",
 ]
@@ -3944,7 +3944,7 @@ dependencies = [
 [[package]]
 name = "memory"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "derive_more",
 ]
@@ -3999,7 +3999,7 @@ version = "3.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba8ee05284d79b367ae8966d558e1a305a781fc80c9df51f37775169117ba64f"
 dependencies = [
- "borsh 0.10.3",
+ "borsh 0.9.3",
  "num-derive 0.3.3",
  "num-traits",
  "solana-program",
@@ -4780,7 +4780,7 @@ checksum = "22505a5c94da8e3b7c2996394d1c933236c4d743e81a410bcca4e6989fc066a4"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.11.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -4798,7 +4798,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81bddcdb20abf9501610992b6759a4c888aef7d1a7247ef75e2404275ac24af1"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.66",
@@ -4816,7 +4816,7 @@ dependencies = [
 [[package]]
 name = "proto-utils"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "const_format",
  "derive_more",
@@ -4828,7 +4828,7 @@ dependencies = [
 [[package]]
 name = "proto-utils"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "const_format",
  "derive_more",
@@ -5434,7 +5434,7 @@ dependencies = [
 [[package]]
 name = "sealable-trie"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "ascii 1.1.0",
  "base64 0.21.7",
@@ -5451,7 +5451,7 @@ dependencies = [
 [[package]]
 name = "sealable-trie"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "ascii 1.1.0",
  "base64 0.21.7",
@@ -5841,7 +5841,7 @@ dependencies = [
 [[package]]
 name = "solana-allocator"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "bytemuck",
  "solana-program",
@@ -5850,7 +5850,7 @@ dependencies = [
 [[package]]
 name = "solana-allocator"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "bytemuck",
  "solana-program",
@@ -5982,7 +5982,7 @@ dependencies = [
 [[package]]
 name = "solana-ibc"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -6020,7 +6020,7 @@ dependencies = [
 [[package]]
 name = "solana-ibc"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -6444,7 +6444,7 @@ checksum = "468aa43b7edb1f9b7b7b686d5c3aeb6630dc1708e86e31343499dd5c4d775183"
 [[package]]
 name = "solana-signature-verifier"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
@@ -6459,7 +6459,7 @@ dependencies = [
 [[package]]
 name = "solana-signature-verifier"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
@@ -6571,7 +6571,7 @@ dependencies = [
 [[package]]
 name = "solana-trie"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "bytemuck",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
@@ -6584,7 +6584,7 @@ dependencies = [
 [[package]]
 name = "solana-trie"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "bytemuck",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
@@ -7207,12 +7207,12 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stdx"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 
 [[package]]
 name = "stdx"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 
 [[package]]
 name = "string_cache"
@@ -7828,7 +7828,7 @@ dependencies = [
 [[package]]
 name = "trie-ids"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "ascii 1.1.0",
  "base64 0.21.7",
@@ -7845,7 +7845,7 @@ dependencies = [
 [[package]]
 name = "trie-ids"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "ascii 1.1.0",
  "base64 0.21.7",
@@ -8093,7 +8093,7 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 [[package]]
 name = "wasm"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#a5438346ffc7824d447c09fad6c1970a536ffb97"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "const_format",
  "derive_more",
@@ -8109,7 +8109,7 @@ dependencies = [
 [[package]]
 name = "wasm"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a4183a1e99eb9ff4d9e2c5e0d0324581a14d64fd"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "const_format",
  "derive_more",

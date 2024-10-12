@@ -25,8 +25,7 @@ pub mod mantis_chain {
 
     pub async fn handle_mantis_execution(
         intent_info: &PostIntentInfo,
-        intent_id: &str,
-        amount: &str,
+        intent_id: &str
     ) -> Result<(), String> {
         let rpc_url = env::var("MANTIS_RPC").expect("MANTIS_RPC must be set");
 
@@ -41,7 +40,6 @@ pub mod mantis_chain {
         if let OperationInput::SwapTransfer(transfer_input) = &intent_info.inputs {
             token_in = transfer_input.token_in.clone();
         }
-
 
         let solver_out = if intent_info.src_chain == "ethereum" {
             SOLVER_ADDRESSES.get(0).unwrap()
@@ -61,7 +59,6 @@ pub mod mantis_chain {
             intent_info.src_chain == intent_info.dst_chain,
             rpc_url,
             Pubkey::from_str("61beRZG1h3SvPgGYh9tXhx42jABkMjbMQWpgqUqXw2hw").unwrap(),
-            amount.parse::<u64>().unwrap()
         )
         .await
         {
@@ -69,8 +66,7 @@ pub mod mantis_chain {
                 "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
                 e
             ));
-        }
-        else {
+        } else {
             println!("solver succesfully solve intent: {}", intent_id);
         }
 

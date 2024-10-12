@@ -73,7 +73,7 @@ pub mod ethereum_chain {
             "inputs": [
                 {
                     "components": [
-                        { "name": "intentId", "type": "string" },
+                        { "name": "intentId", "type": "uint256" },
                         { "name": "tokenOut", "type": "address" },
                         { "name": "amountOut", "type": "uint256" },
                         { "name": "dstUser", "type": "address" },
@@ -90,7 +90,7 @@ pub mod ethereum_chain {
             "stateMutability": "payable",
             "type": "function"
         }]"#
-    );    
+    );
 
     abigen!(
         UsdtContract,
@@ -99,12 +99,12 @@ pub mod ethereum_chain {
         ]"#
     );
 
-    pub const ESCROW_SC_ETHEREUM: &str = "0xA7C369Afd19E9866674B1704a520f42bC8958573";
+    pub const ESCROW_SC_ETHEREUM: &str = "0x10E1566F0d7E810D68414133fE6Cf908629181e3";
     pub const PARASWAP: &str = "0x216b4b4ba9f3e719726886d34a177484278bfcae";
 
     pub async fn handle_ethereum_execution(
         intent: &PostIntentInfo,
-        intent_id: &str,
+        intent_id: U256,
         amount: &str,
         single_domain: bool
     ) -> Result<(), String> {
@@ -148,7 +148,7 @@ pub mod ethereum_chain {
 
         // swap USDT -> token_out
         if false {
-            if let Err(e) = ethereum_trasnfer_swap(intent_id, intent.clone(), amount).await {
+            if let Err(e) = ethereum_trasnfer_swap(&intent_id.to_string(), intent.clone(), amount).await {
                 return Err(format!(
                     "Error occurred on Ethereum swap USDT -> token_out (solver must approve USDT to Paraswap 0x216b4b4ba9f3e719726886d34a177484278bfcae first): {}",
                     e
@@ -518,6 +518,7 @@ pub mod ethereum_chain {
             .map_err(|e| e.to_string())
             .unwrap();
         let provider = Arc::new(provider);
+        println!("token_in: {token_in}");
         let token_in = Address::from_str(token_in).unwrap();
         let token_out = Address::from_str(token_out).unwrap();
         let token0_decimals = get_evm_token_decimals(&ERC20::new(token_in, provider.clone())).await;
@@ -545,44 +546,48 @@ pub mod ethereum_chain {
         provider_url: &str,
         private_key: &str,
         contract_address: &str,
-        intent_id: &str,
+        intent_id: U256,
         token_out: Address,
         amount_out: U256,
         dst_user: Address,
         single_domain: bool,
         solver_out: &str,
-        value_in_wei: U256,
+        value_in_wei: U256
     ) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
         let provider = Provider::<Http>::try_from(provider_url)?;
         let provider = Arc::new(provider);
-
+    
         let wallet: LocalWallet = private_key.parse()?;
         let wallet = wallet.with_chain_id(1u64); // Mainnet
         let wallet = Arc::new(SignerMiddleware::new(provider.clone(), wallet));
-
+    
         let contract_address = contract_address.parse::<Address>()?;
         let contract = Escrow::new(contract_address, wallet.clone());
-
+    
         let solver_transfer_data = (
-            intent_id.to_string(),
+            intent_id,
             token_out,
             amount_out,
             dst_user,
             single_domain,
-            solver_out.to_string(),
+            solver_out.to_string()
         );
-
+    
+        // let gas_price = provider.get_gas_price().await.unwrap();
         let contract = contract
             .send_funds_to_user(solver_transfer_data)
             .value(value_in_wei);
+            // .gas_price(gas_price);  // Set the gas price
+    
         let pending_tx = contract.send().await?;
-
+    
         let tx_receipt = pending_tx
             .await?
             .expect("Failed to fetch transaction receipt");
-
+    
         Ok(tx_receipt)
     }
+    
 
     pub async fn approve_erc20(
         provider_url: &str,
