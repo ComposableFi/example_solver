@@ -147,7 +147,7 @@ pub mod ethereum_chain {
         }
 
         // swap USDT -> token_out
-        if false {
+        if !token_out.eq_ignore_ascii_case(usdt_contract_address) {
             if let Err(e) = ethereum_trasnfer_swap(&intent_id.to_string(), intent.clone(), amount).await {
                 return Err(format!(
                     "Error occurred on Ethereum swap USDT -> token_out (solver must approve USDT to Paraswap 0x216b4b4ba9f3e719726886d34a177484278bfcae first): {}",
