@@ -99,7 +99,7 @@ pub mod ethereum_chain {
         ]"#
     );
 
-    pub const ESCROW_SC_ETHEREUM: &str = "0x10E1566F0d7E810D68414133fE6Cf908629181e3";
+    pub const ESCROW_SC_ETHEREUM: &str = "0x59880a68fafcE2E282866bdb741Cf0b20E95c1B7";
     pub const PARASWAP: &str = "0x216b4b4ba9f3e719726886d34a177484278bfcae";
 
     pub async fn handle_ethereum_execution(
