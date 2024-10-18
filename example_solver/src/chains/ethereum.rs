@@ -518,7 +518,7 @@ pub mod ethereum_chain {
             .map_err(|e| e.to_string())
             .unwrap();
         let provider = Arc::new(provider);
-        println!("token_in: {token_in}");
+
         let token_in = Address::from_str(token_in).unwrap();
         let token_out = Address::from_str(token_out).unwrap();
         let token0_decimals = get_evm_token_decimals(&ERC20::new(token_in, provider.clone())).await;
