@@ -1,9 +1,9 @@
 mod chains;
 mod routers;
 
-use crate::chains::ethereum::ethereum_chain::{ethereum_quote, handle_ethereum_execution};
+use crate::chains::ethereum::ethereum_chain::handle_ethereum_execution;
 use crate::chains::mantis::mantis_chain::handle_mantis_execution;
-use crate::chains::solana::solana_chain::{handle_solana_execution, solana_quote};
+use crate::chains::solana::solana_chain::handle_solana_execution;
 use crate::chains::OperationInput;
 use crate::chains::OperationOutput;
 use crate::chains::PostIntentInfo;
@@ -12,14 +12,17 @@ use crate::chains::SOLVER_ADDRESSES;
 use crate::chains::SOLVER_ID;
 use crate::chains::SOLVER_PRIVATE_KEY;
 use crate::routers::get_simulate_swap_intent;
-use chains::create_keccak256_signature;
+use chains::{create_keccak256_signature, get_token_info, SwapTransferInput, SwapTransferOutput};
 use derive_more::{Deref, DerefMut};
+use ethers::abi::Address;
 use ethers::core::rand;
 use ethers::prelude::{Signature, H256};
 use ethers::types::U256;
 use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
 use log::{debug, error};
+use num_bigint::BigInt;
+use num_traits::Num;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
@@ -29,9 +32,6 @@ use std::env;
 use std::str::FromStr;
 use std::sync::atomic::AtomicU32;
 use std::sync::Arc;
-use ethers::abi::Address;
-use num_bigint::BigInt;
-use num_traits::Num;
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -62,16 +62,19 @@ enum ServerMessage {
 
 #[derive(Serialize, Deserialize)]
 struct QuoteRequest {
+    pub src_chain: Network,
+    pub src_address: String,
     pub token_in: String,
-    pub amount_in: U256,
+    pub amount_in: String,
+    pub dst_chain: Network,
+    pub dst_address: String,
     pub token_out: String,
-    pub network: Network
 }
 
 #[derive(Deserialize, Serialize)]
 struct QuoteResponse {
     pub token_out: String,
-    pub amount_out: U256,
+    pub amount_out: String,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -144,13 +147,20 @@ struct Solver {
     ws_sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
 }
 
-#[derive(Copy, Clone)]
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Network {
     Solana,
     Ethereum,
 }
+
+impl ToString for Network {
+    fn to_string(&self) -> String {
+        format!("{:?}", self).to_lowercase()
+    }
+}
+
+const BRIDGE_TOKEN: &'static str = "USDT";
 
 #[tokio::main]
 async fn main() {
@@ -188,11 +198,8 @@ async fn main() {
     solver.identify_and_send(&message).await.unwrap();
 
     while let Some(msg) = ws_receiver.next().await {
-        if let Err(e) = solver
-            .handle_message(msg)
-            .await {
+        if let Err(e) = solver.handle_message(msg).await {
             error!("Error handling message: {}", e);
-
         }
     }
 
@@ -246,7 +253,8 @@ impl Solver {
                             message: format!("Error processing message: {}", e),
                         }),
                         id,
-                    ).await?;
+                    )
+                    .await?;
                 }
                 Ok(Some(()))
             }
@@ -255,7 +263,10 @@ impl Solver {
         }
     }
 
-    async fn process_server_message(&mut self, ident_server_message: Identified<ServerMessage>) -> anyhow::Result<()> {
+    async fn process_server_message(
+        &mut self,
+        ident_server_message: Identified<ServerMessage>,
+    ) -> anyhow::Result<()> {
         let server_message = ident_server_message.payload;
         let req_id = ident_server_message.id;
         match server_message {
@@ -272,21 +283,19 @@ impl Solver {
                     &intent_info,
                     &intent_info.src_chain,
                     &intent_info.dst_chain,
-                    &"USDT".to_string(),
+                    BRIDGE_TOKEN,
                 )
-                    .await;
+                .await;
 
                 // Decide whether to participate
-                let amount_out_min = if let OperationOutput::SwapTransfer(transfer_output) =
-                    &intent_info.outputs
-                {
-                    U256::from_dec_str(&transfer_output.amount_out).unwrap_or(U256::zero())
-                } else {
-                    U256::zero()
-                };
+                let amount_out_min =
+                    if let OperationOutput::SwapTransfer(transfer_output) = &intent_info.outputs {
+                        U256::from_dec_str(&transfer_output.amount_out).unwrap_or(U256::zero())
+                    } else {
+                        U256::zero()
+                    };
 
-                let final_amount_u256 =
-                    U256::from_dec_str(&final_amount).unwrap_or(U256::zero());
+                let final_amount_u256 = U256::from_dec_str(&final_amount).unwrap_or(U256::zero());
 
                 println!(
                     "User wants {} token_out, you can provide {} token_out (after fees and commission)",
@@ -306,8 +315,8 @@ impl Solver {
                         auction_bid_request,
                         SOLVER_PRIVATE_KEY.to_string(),
                     )
-                        .await
-                        .unwrap();
+                    .await
+                    .unwrap();
 
                     // Serialize the message
                     let message = ClientMessage::AuctionBid(auction_bid_request);
@@ -342,8 +351,7 @@ impl Solver {
                             // Handle execution
                             let handle_result = match intent.dst_chain.as_str() {
                                 "solana" => {
-                                    handle_solana_execution(&intent, &intent_id, &amount)
-                                        .await
+                                    handle_solana_execution(&intent, &intent_id, &amount).await
                                 }
                                 "ethereum" => {
                                     handle_ethereum_execution(
@@ -352,12 +360,9 @@ impl Solver {
                                         &amount,
                                         intent.src_chain == intent.dst_chain,
                                     )
-                                        .await
+                                    .await
                                 }
-                                "mantis" => {
-                                    handle_mantis_execution(&intent, &intent_id)
-                                        .await
-                                }
+                                "mantis" => handle_mantis_execution(&intent, &intent_id).await,
                                 _ => Err("Unsupported destination chain".to_string()),
                             };
 
@@ -380,7 +385,7 @@ impl Solver {
                 eprintln!("Error from server: {}", error_response.message);
             }
             ServerMessage::QuoteRequest(req) => {
-                let quote_market = self.quote_market(req.network, &req).await?;
+                let quote_market = self.quote_market(&req).await;
                 let message = ClientMessage::QuoteResponse(QuoteResponse {
                     token_out: req.token_out,
                     amount_out: quote_market,
@@ -391,28 +396,31 @@ impl Solver {
         Ok(())
     }
 
-    async fn quote_market(
-        &self,
-        network: Network,
-        quote_request: &QuoteRequest,
-    ) -> anyhow::Result<U256> {
-        match network {
-            Network::Solana => {
-                let dest_user = Pubkey::default();
-                let token_in = Pubkey::from_str(&quote_request.token_in)?;
-                let amount_in = quote_request.amount_in.as_u64();
-                let token_out = Pubkey::from_str(&quote_request.token_out)?;
-                let quote = solana_quote(dest_user, token_in, token_out, amount_in).await?;
-                Ok(quote.out_amount.into())
-            }
-            Network::Ethereum => {
-                let token_in = Address::from_str(&quote_request.token_in)?;
-                let token_out = Address::from_str(&quote_request.token_out)?;
-                let amount_in = BigInt::from_str_radix(&quote_request.amount_in.to_string(), 16)?;
-                let amount_out = ethereum_quote(token_in,  amount_in, token_out).await;
-                Ok(U256::from_dec_str(&amount_out.to_string()).unwrap())
-            }
-        }
+    async fn quote_market(&self, quote_request: &QuoteRequest) -> String {
+        let src_chain = &quote_request.src_chain;
+        let dst_chain = &quote_request.dst_chain;
+        let intent_info = PostIntentInfo {
+            function_name: "".to_string(),
+            src_chain: src_chain.to_string(),
+            dst_chain: dst_chain.to_string(),
+            inputs: OperationInput::SwapTransfer(SwapTransferInput {
+                token_in: quote_request.token_in.clone(),
+                amount_in: quote_request.amount_in.clone(),
+                src_chain_user: quote_request.src_address.clone(),
+                timeout: "".to_string(),
+            }),
+            outputs: OperationOutput::SwapTransfer(SwapTransferOutput {
+                token_out: quote_request.token_out.clone(),
+                amount_out: "1".to_string(),
+                dst_chain_user: quote_request.dst_address.clone(),
+            }),
+        };
+        get_simulate_swap_intent(
+            &intent_info,
+            &src_chain.to_string(),
+            &dst_chain.to_string(),
+            BRIDGE_TOKEN,
+        )
+        .await
     }
 }
-

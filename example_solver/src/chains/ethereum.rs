@@ -508,16 +508,19 @@ pub mod ethereum_chain {
         }
     }
 
-    pub async fn ethereum_quote(
-        token_in: Address,
-        amount_in: BigInt,
-        token_out: Address,
+    pub async fn ethereum_simulate_swap(
+        token_in: &str,
+        amount_in: &str,
+        token_out: &str,
     ) -> BigInt {
         let rpc_url = env::var("ETHEREUM_RPC").expect("ETHEREUM_RPC must be set");
         let provider = Provider::<Http>::try_from(rpc_url)
             .map_err(|e| e.to_string())
             .unwrap();
         let provider = Arc::new(provider);
+
+        let token_in = Address::from_str(token_in).unwrap();
+        let token_out = Address::from_str(token_out).unwrap();
         let token0_decimals = get_evm_token_decimals(&ERC20::new(token_in, provider.clone())).await;
         let token1_decimals =
             get_evm_token_decimals(&ERC20::new(token_out, provider.clone())).await;
@@ -525,9 +528,9 @@ pub mod ethereum_chain {
         let paraswap_params = ParaswapParams {
             side: "SELL".to_string(),
             chain_id: 1,
-            amount_in,
-            token_in,
-            token_out,
+            amount_in: BigInt::from_str(amount_in).unwrap(),
+            token_in: token_in,
+            token_out: token_out,
             token0_decimals: token0_decimals as u32,
             token1_decimals: token1_decimals as u32,
             wallet_address: Address::from_str(SOLVER_ADDRESSES.get(0).unwrap()).unwrap(),

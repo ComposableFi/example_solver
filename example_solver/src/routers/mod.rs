@@ -5,18 +5,16 @@ pub mod paraswap;
 // use serde_json::Value;
 use crate::chains::*;
 use crate::PostIntentInfo;
-use ethereum::ethereum_chain::ethereum_quote;
+use ethereum::ethereum_chain::ethereum_simulate_swap;
 use lazy_static::lazy_static;
 use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::Zero;
-use solana::solana_chain::solana_quote;
+use solana::solana_chain::solana_simulate_swap;
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
-use anchor_lang::prelude::Pubkey;
-use ethers::abi::Address;
 use tokio::sync::RwLock;
 
 lazy_static! {
@@ -43,7 +41,7 @@ pub async fn get_simulate_swap_intent(
     intent_info: &PostIntentInfo,
     mut src_chain: &str,
     mut dst_chain: &str,
-    bridge_token: &String,
+    bridge_token: &str,
 ) -> String {
     // Extracting values from OperationInput
     let (mut token_in, amount_in, src_chain_user) = match &intent_info.inputs {
@@ -96,11 +94,8 @@ pub async fn get_simulate_swap_intent(
     if !bridge_token_address_src.eq_ignore_ascii_case(&token_in) {
         // simulate token_in -> USDT
         if src_chain == "ethereum" {
-            let token_in = Address::from_str(&token_in).unwrap();
-            let bridge_token_address_src = Address::from_str(&bridge_token_address_src).unwrap();
-            let amount_in = amount_in.parse::<BigInt>().unwrap();
             amount_out_src_chain =
-                ethereum_quote(token_in, amount_in, bridge_token_address_src).await;
+                ethereum_simulate_swap(&token_in, &amount_in, bridge_token_address_src).await;
         } else if src_chain == "solana" || src_chain == "mantis" {
             if src_chain == "mantis" {
                 let tokens = MANTIS_TOKENS.read().await;
@@ -117,18 +112,16 @@ pub async fn get_simulate_swap_intent(
             }
 
             if !amount_out_src_chain.is_zero() {
-                let src_chain_user = Pubkey::from_str(&src_chain_user).unwrap();
-                let token_in = Pubkey::from_str(&token_in).unwrap();
-                let bridge_token_address_src = Pubkey::from_str(&bridge_token_address_src).unwrap();
-                amount_out_src_chain = BigInt::from(
-                    solana_quote(
-                        src_chain_user,
-                        token_in,
-                        bridge_token_address_src,
-                        amount_in.parse::<u64>().unwrap(),
+                amount_out_src_chain = BigInt::from_str(
+                    &solana_simulate_swap(
+                        &src_chain_user,
+                        &token_in,
+                        &bridge_token_address_src,
+                        BigInt::from_str(&amount_in).unwrap().to_u64().unwrap(),
                     )
-                    .await.unwrap().out_amount,
+                    .await,
                 )
+                .unwrap();
             }
         }
     }
@@ -168,11 +161,10 @@ pub async fn get_simulate_swap_intent(
     {
         // simulate USDT -> token_out
         if dst_chain == "ethereum" {
-            let token_in = Address::from_str(&token_in).unwrap();
-            let bridge_token_address_src = Address::from_str(&bridge_token_address_src).unwrap();
-            let amount_in = amount_in.parse::<BigInt>().unwrap();
             final_amount_out =
-                ethereum_quote(token_in, amount_in, bridge_token_address_src).await.to_string();
+                ethereum_simulate_swap(bridge_token_address_dst, &final_amount_out, &token_out)
+                    .await
+                    .to_string();
         } else if dst_chain == "solana" || dst_chain == "mantis" {
             if src_chain == "mantis" {
                 let tokens = MANTIS_TOKENS.read().await;
@@ -189,16 +181,13 @@ pub async fn get_simulate_swap_intent(
             }
 
             if final_amount_out != "0" {
-                let dst_chain_user = Pubkey::from_str(&dst_chain_user).unwrap();
-                let token_out = Pubkey::from_str(&token_out).unwrap();
-                let bridge_token_address_dst = Pubkey::from_str(&bridge_token_address_dst).unwrap();
-                final_amount_out = solana_quote(
-                    dst_chain_user,
+                final_amount_out = solana_simulate_swap(
+                    &dst_chain_user,
                     bridge_token_address_dst,
-                    token_out,
+                    &token_out,
                     amount_in_dst_chain.to_u64().unwrap(),
                 )
-                .await.unwrap().out_amount.to_string();
+                .await;
             }
         }
     }

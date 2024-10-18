@@ -1,6 +1,6 @@
 pub mod solana_chain {
     use crate::chains::*;
-    use crate::routers::jupiter::{create_token_account, Quote};
+    use crate::routers::jupiter::create_token_account;
     use crate::routers::jupiter::jupiter_swap;
     use crate::routers::jupiter::quote;
     use crate::routers::jupiter::Memo as Jup_Memo;
@@ -340,18 +340,23 @@ pub mod solana_chain {
         }
     }
 
-    pub async fn solana_quote(
-        dst_chain_user: Pubkey,
-        token_in: Pubkey,
-        token_out: Pubkey,
+    pub async fn solana_simulate_swap(
+        dst_chain_user: &str,
+        token_in: &str,
+        token_out: &str,
         amount_in: u64,
-    ) -> anyhow::Result<Quote> {
-        let memo = Jup_Memo {
-            user_account: dst_chain_user,
-            token_in,
-            token_out,
-            amount: amount_in,
-            slippage_bps: 100,
+    ) -> String {
+        let memo_json = json!({
+            "user_account": dst_chain_user,
+            "token_in": token_in,
+            "token_out": token_out,
+            "amount": amount_in,
+            "slippage_bps": 100
+        });
+
+        let memo = match Jup_Memo::from_json(&memo_json.to_string()) {
+            Ok(memo) => memo,
+            Err(_) => return "0".to_string(),
         };
 
         let quote_config = QuoteConfig {
@@ -361,7 +366,12 @@ pub mod solana_chain {
             ..QuoteConfig::default()
         };
 
-        Ok(quote(memo.token_in, memo.token_out, memo.amount, quote_config).await?)
+        let quotes = match quote(memo.token_in, memo.token_out, memo.amount, quote_config).await {
+            Ok(quotes) => quotes,
+            Err(_) => return "0".to_string(),
+        };
+
+        BigInt::from(quotes.out_amount).to_string()
     }
 
     pub async fn solana_send_funds_to_user(
