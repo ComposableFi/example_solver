@@ -793,7 +793,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4114279215a005bc675e386011e594e1d9b800918cea18fcadadcce864a2046b"
 dependencies = [
  "borsh-derive 0.10.3",
- "hashbrown 0.12.3",
+ "hashbrown 0.13.2",
 ]
 
 [[package]]
@@ -901,7 +901,7 @@ dependencies = [
  "base64 0.21.7",
  "bytemuck",
  "cf-guest 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "hex-literal",
  "ibc",
@@ -1104,7 +1104,7 @@ source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=f
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
  "ibc-client-tendermint-types",
  "ibc-core-client-context",
@@ -1128,7 +1128,7 @@ source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=u
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "ibc-client-tendermint-types",
  "ibc-core-client-context",
@@ -1675,6 +1675,26 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "derive_more"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
+dependencies = [
+ "derive_more-impl",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb7330aeadfbe296029522e6c40f315320aba36fc43a5b3632f3795348f3bd22"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.66",
 ]
 
 [[package]]
@@ -2328,12 +2348,15 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "bridge-escrow",
+ "derive_more 1.0.0",
  "dotenv",
+ "env_logger",
  "ethers",
  "futures",
  "hex",
  "lazy_static",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
+ "log",
  "num-bigint 0.4.5",
  "num-traits",
  "reqwest",
@@ -2687,7 +2710,7 @@ source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=f
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-client-context",
  "ibc-core-commitment-types",
  "ibc-core-host",
@@ -2709,7 +2732,7 @@ source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=u
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-client-context",
  "ibc-core-commitment-types",
  "ibc-core-host",
@@ -2766,9 +2789,6 @@ name = "hashbrown"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
-dependencies = [
- "ahash 0.7.8",
-]
 
 [[package]]
 name = "hashbrown"
@@ -3065,7 +3085,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core",
  "ibc-proto",
@@ -3087,7 +3107,7 @@ name = "ibc-client-tendermint"
 version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-client-tendermint-types",
  "ibc-core-client",
  "ibc-core-commitment-types",
@@ -3178,7 +3198,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-client-types",
  "ibc-core-commitment-types",
@@ -3211,7 +3231,7 @@ name = "ibc-core-client-context"
 version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-client-tendermint-types",
  "ibc-core-client-types",
@@ -3229,7 +3249,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-commitment-types",
  "ibc-core-host-types",
@@ -3246,7 +3266,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-primitives",
  "ibc-proto",
@@ -3273,7 +3293,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-client-types",
  "ibc-core-commitment-types",
@@ -3307,7 +3327,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-channel-types",
  "ibc-core-client-types",
@@ -3327,7 +3347,7 @@ name = "ibc-core-host"
 version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-channel-types",
  "ibc-core-client-context",
@@ -3346,7 +3366,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-app-transfer-types",
  "ibc-client-tendermint",
@@ -3370,7 +3390,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-primitives",
  "serde",
@@ -3381,7 +3401,7 @@ name = "ibc-core-router"
 version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-channel-types",
  "ibc-core-host-types",
@@ -3396,7 +3416,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-core-host-types",
  "ibc-primitives",
@@ -3422,7 +3442,7 @@ version = "0.50.0"
 source = "git+https://github.com/mina86/ibc-rs?rev=f07276383091f75b7ee8bff6fd434f8214ac5054#f07276383091f75b7ee8bff6fd434f8214ac5054"
 dependencies = [
  "borsh 0.10.3",
- "derive_more",
+ "derive_more 0.99.17",
  "displaydoc",
  "ibc-proto",
  "prost",
@@ -3760,7 +3780,7 @@ dependencies = [
  "borsh 0.10.3",
  "bs58 0.5.1",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "sha2 0.10.8",
  "solana-program",
  "stdx 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
@@ -3775,7 +3795,7 @@ dependencies = [
  "borsh 0.10.3",
  "bs58 0.5.1",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "sha2 0.10.8",
  "solana-program",
  "stdx 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
@@ -3938,7 +3958,7 @@ name = "memory"
 version = "0.0.0"
 source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
 ]
 
 [[package]]
@@ -3946,7 +3966,7 @@ name = "memory"
 version = "0.0.0"
 source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
 ]
 
 [[package]]
@@ -4819,7 +4839,7 @@ version = "0.0.0"
 source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "const_format",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-client-context",
  "ibc-proto",
  "prost",
@@ -4831,7 +4851,7 @@ version = "0.0.0"
 source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "const_format",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-client-context",
  "ibc-proto",
  "prost",
@@ -5357,7 +5377,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eca070c12893629e2cc820a9761bedf6ce1dcddc9852984d1dc734b8bd9bd024"
 dependencies = [
  "cfg-if",
- "derive_more",
+ "derive_more 0.99.17",
  "parity-scale-codec",
  "scale-info-derive",
 ]
@@ -5440,7 +5460,7 @@ dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
  "memory 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
  "sha2 0.10.8",
@@ -5457,7 +5477,7 @@ dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "memory 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "sha2 0.10.8",
@@ -5989,7 +6009,7 @@ dependencies = [
  "base64 0.21.7",
  "bytemuck",
  "cf-guest 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
  "hex-literal",
  "ibc",
@@ -6027,7 +6047,7 @@ dependencies = [
  "base64 0.21.7",
  "bytemuck",
  "cf-guest 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "hex-literal",
  "ibc",
@@ -6449,7 +6469,7 @@ dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
  "solana-program",
@@ -6464,7 +6484,7 @@ dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "guestchain 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
  "solana-program",
@@ -7456,7 +7476,7 @@ version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b8090d0eef9ad57b1b913b5e358e26145c86017e87338136509b94383a4af25"
 dependencies = [
- "derive_more",
+ "derive_more 0.99.17",
  "flex-error",
  "serde",
  "tendermint",
@@ -7834,7 +7854,7 @@ dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-channel-types",
  "ibc-core-client-types",
  "ibc-core-connection-types",
@@ -7851,7 +7871,7 @@ dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
  "bytemuck",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-channel-types",
  "ibc-core-client-types",
  "ibc-core-connection-types",
@@ -8096,7 +8116,7 @@ version = "0.0.0"
 source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge#d843604e1a027c53abe06dfd211da754bec4521a"
 dependencies = [
  "const_format",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-client-context",
  "ibc-core-commitment-types",
  "ibc-primitives",
@@ -8112,7 +8132,7 @@ version = "0.0.0"
 source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#a78423c40abb0798232cab888431be722dc3c8f5"
 dependencies = [
  "const_format",
- "derive_more",
+ "derive_more 0.99.17",
  "ibc-core-client-context",
  "ibc-core-commitment-types",
  "ibc-primitives",
@@ -8207,7 +8227,7 @@ dependencies = [
  "arrayvec",
  "base64 0.21.7",
  "bytes",
- "derive_more",
+ "derive_more 0.99.17",
  "ethabi",
  "ethereum-types",
  "futures",

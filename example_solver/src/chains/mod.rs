@@ -5,7 +5,7 @@ pub mod solana;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
-use crate::env;
+use crate::{env, SignedPayload};
 use ethers::prelude::*;
 use ethers::signers::LocalWallet;
 use ethers::utils::hash_message;
@@ -144,26 +144,23 @@ pub fn get_token_info(token: &str, blockchain: &str) -> Option<(&'static str, u3
     Some((address, info.decimals))
 }
 
-pub async fn create_keccak256_signature(
-    json_data: &mut Value,
+pub async fn create_keccak256_signature<T: Serialize>(
+    json_data: T,
     private_key: String,
-) -> Result<(), Box<dyn Error>> {
-    let json_str = json_data.to_string();
+) -> Result<SignedPayload<T>, Box<dyn Error>> {
+    let json_str = serde_json::to_string(&json_data)?;
     let json_bytes = json_str.as_bytes();
 
-    let hash = keccak256(json_bytes);
-    let hash_hex = hex::encode(hash);
+    let hash = H256(keccak256(json_bytes));
 
     let wallet: LocalWallet = private_key.parse().unwrap();
     let eth_message_hash = hash_message(hash);
 
     let signature: Signature = wallet.sign_hash(H256::from(eth_message_hash)).unwrap();
-    let signature_hex = signature.to_string();
 
-    if let Some(msg) = json_data.get_mut("msg") {
-        msg["hash"] = Value::String(hash_hex);
-        msg["signature"] = Value::String(signature_hex);
-    }
-
-    Ok(())
+    Ok(SignedPayload {
+        payload: json_data,
+        hash,
+        signature,
+    })
 }

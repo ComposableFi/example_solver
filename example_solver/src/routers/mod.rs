@@ -41,7 +41,7 @@ pub async fn get_simulate_swap_intent(
     intent_info: &PostIntentInfo,
     mut src_chain: &str,
     mut dst_chain: &str,
-    bridge_token: &String,
+    bridge_token: &str,
 ) -> String {
     // Extracting values from OperationInput
     let (mut token_in, amount_in, src_chain_user) = match &intent_info.inputs {
