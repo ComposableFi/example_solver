@@ -12,13 +12,14 @@ use crate::chains::SOLVER_ADDRESSES;
 use crate::chains::SOLVER_ID;
 use crate::chains::SOLVER_PRIVATE_KEY;
 use crate::routers::get_simulate_swap_intent;
-use chains::create_keccak256_signature;
+use chains::{create_keccak256_signature, Blockchain, TransferDir};
 use ethers::types::U256;
 use futures::{SinkExt, StreamExt};
 use serde_json::json;
 use serde_json::Value;
 use spl_associated_token_account::get_associated_token_address;
 use std::env;
+use std::str::FromStr;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -37,6 +38,12 @@ async fn main() {
             "solver_addresses": SOLVER_ADDRESSES,
         }
     });
+    let allowed_transfers: Vec<TransferDir> = env::var("ALLOWED_TRANSFERS")
+        .map(|s| {
+            let strs = s.split(',');
+            strs.map(|s| TransferDir::try_from(s).unwrap()).collect()
+        })
+        .unwrap_or(TransferDir::all());
 
     create_keccak256_signature(&mut json_data, SOLVER_PRIVATE_KEY.to_string())
         .await
@@ -79,6 +86,17 @@ async fn main() {
                     let intent_value: Value = serde_json::from_str(&intent_str).unwrap();
                     let intent_info: PostIntentInfo = serde_json::from_value(intent_value).unwrap();
 
+                    let trasfer_dir = TransferDir {
+                        src: Blockchain::from_str(&intent_info.src_chain)
+                            .expect("Unrecognized source chain"),
+                        dst: Blockchain::from_str(&intent_info.dst_chain)
+                            .expect("Unrecognized destination chain"),
+                    };
+                    if ! allowed_transfers.contains(&trasfer_dir) {
+                        println!("Transfer not allowed: {:?}", intent_info);
+                        continue;
+                    }
+
                     // calculate best quote
                     let final_amount = get_simulate_swap_intent(
                         &intent_info,
@@ -87,7 +105,7 @@ async fn main() {
                         &String::from("USDT"),
                     )
                     .await;
-
+                    
                     // decide if participate or not
                     let mut amount_out_min = U256::zero();
                     if let OperationOutput::SwapTransfer(transfer_output) = &intent_info.outputs {
@@ -158,13 +176,16 @@ async fn main() {
                                     .await
                                     .unwrap();
                             } else if intent.dst_chain == "ethereum" {
-                                handle_ethereum_execution(&intent, U256::from_dec_str(intent_id).unwrap(), amount, intent.src_chain == intent.dst_chain)
-                                    .await
-                                    .unwrap();
+                                handle_ethereum_execution(
+                                    &intent,
+                                    U256::from_dec_str(intent_id).unwrap(),
+                                    amount,
+                                    intent.src_chain == intent.dst_chain,
+                                )
+                                .await
+                                .unwrap();
                             } else if intent.dst_chain == "mantis" {
-                                handle_mantis_execution(&intent, intent_id)
-                                    .await
-                                    .unwrap();
+                                handle_mantis_execution(&intent, intent_id).await.unwrap();
                             }
 
                             // ws_sender.send(Message::text(msg)).await.expect("Failed to send message");

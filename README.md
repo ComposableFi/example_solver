@@ -194,7 +194,13 @@ BRIDGE_TOKEN="USDT" # USDT
 COMISSION="10" # if COMISSION == "1"-> 0.01%
 SOLVER_ID="" # Given by Composable
 COMPOSABLE_ENDPOINT="" # ws IP address Given by Composable
+ALLOWED_TRANSFERS="ethereum,solana,ethereum-solana,solana-ethereum"
 ```
+
+In the example above `ALLOWED_TRANSFER` allows for all possible domains at the moment.
+If you want to ignore some incoming intents (e.g. because you cannot handle them well),
+remove the appropriate elements from the list.
+
 ## Step 2: Run the Solver
 To run the solver, use the following command:
 ```sh

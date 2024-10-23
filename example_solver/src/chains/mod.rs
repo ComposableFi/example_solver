@@ -84,11 +84,60 @@ pub struct PostIntentInfo {
     pub outputs: OperationOutput,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, EnumString, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, EnumString, Serialize, Deserialize)]
 #[strum(serialize_all = "lowercase")]
-enum Blockchain {
+pub enum Blockchain {
     Ethereum,
     Solana,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TransferDir {
+    pub src: Blockchain,
+    pub dst: Blockchain,
+}
+
+impl<'a> TryFrom<&'a str> for TransferDir {
+    type Error = &'a str;
+
+    fn try_from(value: &'a str) -> Result<Self, Self::Error> {
+        let parts: Vec<&str> = value.split("-").collect();
+        match parts.len() {
+            1 => {
+                let chn = Blockchain::from_str(parts[0]).map_err(|_| parts[0])?;
+                Ok(TransferDir { src: chn.clone(), dst: chn })
+            },
+            2 => {
+                let src = Blockchain::from_str(parts[0]).map_err(|_| parts[0])?;
+                let dst = Blockchain::from_str(parts[1]).map_err(|_| parts[1])?;
+                Ok(TransferDir { src, dst })
+            },
+            _ => Err(value),
+        }
+    }
+}
+
+impl TransferDir {
+    pub fn all() -> Vec<TransferDir> {
+        vec![
+            Self {
+                src: Blockchain::Solana,
+                dst: Blockchain::Solana,
+            },
+            Self {
+                src: Blockchain::Solana,
+                dst: Blockchain::Ethereum,
+            },
+            Self {
+                src: Blockchain::Ethereum,
+                dst: Blockchain::Solana,
+            },
+            Self {
+                src: Blockchain::Ethereum,
+                dst: Blockchain::Ethereum,
+            },
+        ]
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, EnumString, Serialize, Deserialize)]
