@@ -145,7 +145,7 @@ pub async fn get_simulate_swap_intent(
         .parse::<u32>()
         .unwrap();
 
-    if amount_out_src_chain < BigInt::from(flat_fees.0 + flat_fees.1 + comission) {
+    if amount_out_src_chain < BigInt::from(flat_fees.0 + flat_fees.1 + (&amount_out_src_chain * comission) / 100) {
         return String::from("0");
     }
 

@@ -133,12 +133,10 @@ pub mod ethereum_chain {
         let mut token_in = String::default();
         let mut token_out = String::default();
         let mut amount_in = String::default();
-        let mut amount_out = String::default();
         let mut dst_user = String::default();
 
         if let OperationOutput::SwapTransfer(transfer_output) = &intent.outputs {
             token_out = transfer_output.token_out.clone();
-            amount_out = transfer_output.amount_out.clone();
             dst_user = transfer_output.dst_chain_user.clone();
         }
         if let OperationInput::SwapTransfer(transfer_input) = &intent.inputs {
@@ -184,7 +182,7 @@ pub mod ethereum_chain {
             ESCROW_SC_ETHEREUM,
             intent_id,
             Address::from_str(&token_out).unwrap(),
-            U256::from_dec_str(&amount_out).unwrap(),
+            U256::from_dec_str(&amount).unwrap(),
             Address::from_str(&dst_user).unwrap(),
             single_domain,
             solver_out,
