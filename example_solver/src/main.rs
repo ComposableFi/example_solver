@@ -60,12 +60,44 @@ enum ServerMessage {
     QuoteRequest(QuoteRequest),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Token {
+    USDT,
+}
+
+impl Token {
+    pub(crate) fn to_address(&self, network: Network) -> String {
+        match network {
+            Network::Solana => match self {
+                Token::USDT => "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB".to_string(),
+            },
+            Network::Ethereum => match self {
+                Token::USDT => "0xdac17f958d2ee523a2206206994597c13d831ec7".to_string(),
+            },
+        }
+    }
+}
+
+/// Single/cross-chain quote request
+#[derive(Serialize, Deserialize, Clone)]
 struct QuoteRequest {
+    pub source_network: Option<Network>,
+    pub destination_network: Option<Network>,
+    pub network: Option<Network>,
+    pub token_in: String,
+    pub token_intermediate: Option<Token>,
+    pub amount_in: U256,
+    pub token_out: String,
+}
+
+/// Quote on a single network
+#[derive(Debug)]
+struct SingleQuote {
+    pub network: Network,
     pub token_in: String,
     pub amount_in: U256,
     pub token_out: String,
-    pub network: Network
 }
 
 #[derive(Deserialize, Serialize)]
@@ -144,7 +176,7 @@ struct Solver {
     ws_sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Network {
@@ -379,12 +411,50 @@ impl Solver {
                 eprintln!("Error from server: {}", error_response.message);
             }
             ServerMessage::QuoteRequest(req) => {
-                let quote_market = self.quote_market(req.network, &req).await?;
+                let (source_network, dest_network) = match (req.network, req.source_network, req.destination_network) {
+                    (Some(network), None, None) => {
+                        (network, network)
+                    }
+                    (None, Some(source_network), Some(destination_network)) => {
+                        (source_network, destination_network)
+                    }
+                    _ => {
+                        return Err(anyhow::anyhow!("Expected either `network` or `source_network` and `destination_network`"));
+                    }
+                };
+                let amount_out = if source_network == dest_network {
+                    let network = source_network;
+                    let quote_market = self.quote_market(network, &SingleQuote {
+                        network,
+                        token_in: req.token_in,
+                        amount_in: req.amount_in,
+                        token_out: req.token_out.clone(),
+                    }).await?;
+                    quote_market
+                } else {
+                    let intermediate_token = req.token_intermediate.unwrap_or(Token::USDT);
+                    // In case of cross-chain quote, we do 2 queries using the in/out and intermediate token on the networks
+                    let token_out_source = intermediate_token.to_address(source_network);
+                    let amount_out_source = self.quote_market(source_network, &SingleQuote {
+                        network: source_network,
+                        token_in: req.token_in,
+                        amount_in: req.amount_in,
+                        token_out: token_out_source,
+                    }).await?;
+                    let token_out_dest = intermediate_token.to_address(dest_network);
+                    let amount_out_dest = self.quote_market(dest_network, &SingleQuote {
+                        network: dest_network,
+                        token_in: token_out_dest,
+                        amount_in: amount_out_source,
+                        token_out: req.token_out.clone(),
+                    }).await?;
+                    amount_out_dest
+                };
                 let message = ClientMessage::QuoteResponse(QuoteResponse {
                     token_out: req.token_out,
-                    amount_out: quote_market,
+                    amount_out,
                 });
-                self.reply(&message, req_id).await.unwrap();
+                self.reply(&message, req_id).await?;
             }
         }
         Ok(())
@@ -393,7 +463,7 @@ impl Solver {
     async fn quote_market(
         &self,
         network: Network,
-        quote_request: &QuoteRequest,
+        quote_request: &SingleQuote,
     ) -> anyhow::Result<U256> {
         match network {
             Network::Solana => {
@@ -408,7 +478,7 @@ impl Solver {
                 let token_in = Address::from_str(&quote_request.token_in)?;
                 let token_out = Address::from_str(&quote_request.token_out)?;
                 let amount_in = BigInt::from_str_radix(&quote_request.amount_in.to_string(), 16)?;
-                let amount_out = ethereum_quote(token_in,  amount_in, token_out).await;
+                let amount_out = ethereum_quote(token_in,  amount_in, token_out).await?;
                 Ok(U256::from_dec_str(&amount_out.to_string()).unwrap())
             }
         }

@@ -100,7 +100,7 @@ pub async fn get_simulate_swap_intent(
             let bridge_token_address_src = Address::from_str(&bridge_token_address_src).unwrap();
             let amount_in = amount_in.parse::<BigInt>().unwrap();
             amount_out_src_chain =
-                ethereum_quote(token_in, amount_in, bridge_token_address_src).await;
+                ethereum_quote(token_in, amount_in, bridge_token_address_src).await.unwrap();
         } else if src_chain == "solana" || src_chain == "mantis" {
             if src_chain == "mantis" {
                 let tokens = MANTIS_TOKENS.read().await;
@@ -172,7 +172,7 @@ pub async fn get_simulate_swap_intent(
             let bridge_token_address_src = Address::from_str(&bridge_token_address_src).unwrap();
             let amount_in = amount_in.parse::<BigInt>().unwrap();
             final_amount_out =
-                ethereum_quote(token_in, amount_in, bridge_token_address_src).await.to_string();
+                ethereum_quote(token_in, amount_in, bridge_token_address_src).await.unwrap().to_string();
         } else if dst_chain == "solana" || dst_chain == "mantis" {
             if src_chain == "mantis" {
                 let tokens = MANTIS_TOKENS.read().await;

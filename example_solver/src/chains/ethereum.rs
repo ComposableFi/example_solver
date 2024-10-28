@@ -19,6 +19,7 @@ pub mod ethereum_chain {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
+    use anyhow::{anyhow, bail};
 
     #[derive(Deserialize)]
     struct GasPrice {
@@ -512,7 +513,7 @@ pub mod ethereum_chain {
         token_in: Address,
         amount_in: BigInt,
         token_out: Address,
-    ) -> BigInt {
+    ) -> anyhow::Result<BigInt> {
         let rpc_url = env::var("ETHEREUM_RPC").expect("ETHEREUM_RPC must be set");
         let provider = Provider::<Http>::try_from(rpc_url)
             .map_err(|e| e.to_string())
@@ -535,8 +536,8 @@ pub mod ethereum_chain {
             client_aggregator: Client::new(),
         };
 
-        let (_res_amount, _, _) = simulate_swap_paraswap(paraswap_params).await.unwrap();
-        _res_amount
+        let (res_amount, _, _) = simulate_swap_paraswap(paraswap_params).await.map_err(|e| anyhow!(e))?;
+        Ok(res_amount)
     }
 
     pub async fn ethereum_send_funds_to_user(

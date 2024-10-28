@@ -4,6 +4,7 @@ pub mod paraswap_router {
     use reqwest::Client;
     use serde_json::Value;
     use std::str::FromStr;
+    use log::debug;
 
     #[derive(Debug)]
     pub struct ParaswapParams {
@@ -90,6 +91,7 @@ pub mod paraswap_router {
                     .map_err(|err| err.to_string())?;
 
                 let body = res.text().await.map_err(|err| err.to_string())?;
+                debug!("paraswap response: {body}");
 
                 let json_value = serde_json::from_str::<serde_json::Value>(&body)
                     .map_err(|err| err.to_string())?;
@@ -107,6 +109,7 @@ pub mod paraswap_router {
                             "Failed getting calldata in Paraswap (weird): {:#}",
                             json_value
                         );
+                        return Err("Failed getting calldata in Paraswap (weird)".to_string());
                     }
                 }
             }
@@ -115,6 +118,7 @@ pub mod paraswap_router {
                     "Failed getting price in Paraswap (maybe token doesn't exist): {:#}",
                     body
                 );
+                return Err("Failed getting price in Paraswap (maybe token doesn't exist)".to_string());
             }
         }
 
