@@ -35,6 +35,9 @@ web3 = "0.19.0"
 bridge-escrow = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "upgrade", package = "bridge-escrow" }
 solana-ibc = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", features = ["cpi"] }
 lib = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", features = ["solana-program"] }
+derive_more = { version = "1.0.0", features = ["deref", "deref_mut"] }
+log = "0.4.21"
+env_logger = "0.9.3"
 
 [patch.crates-io]
 # aes-gcm-siv 0.10.3 and curve25519-dalek 3.x pin zeroize to <1.4
@@ -49,6 +52,3 @@ lib = { git = "https://github.com/ComposableFi/emulated-light-client.git", branc
 # https://github.com/dalek-cryptography/curve25519-dalek/pull/606
 aes-gcm-siv = { git = "https://github.com/RustCrypto/AEADs", rev = "6105d7a5591aefa646a95d12b5e8d3f55a9214ef" }
 curve25519-dalek = { git = "https://github.com/dalek-cryptography/curve25519-dalek", rev = "8274d5cbb6fc3f38cdc742b4798173895cd2a290" }
-
-
-

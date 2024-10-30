@@ -12,176 +12,415 @@ use crate::chains::SOLVER_ADDRESSES;
 use crate::chains::SOLVER_ID;
 use crate::chains::SOLVER_PRIVATE_KEY;
 use crate::routers::get_simulate_swap_intent;
-use chains::create_keccak256_signature;
+use chains::{create_keccak256_signature, get_token_info, SwapTransferInput, SwapTransferOutput};
+use derive_more::{Deref, DerefMut};
+use ethers::abi::Address;
+use ethers::core::rand;
+use ethers::prelude::{Signature, H256};
 use ethers::types::U256;
+use futures::stream::SplitSink;
 use futures::{SinkExt, StreamExt};
+use log::{debug, error};
+use num_bigint::BigInt;
+use num_traits::Num;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use serde_json::Value;
+use solana_sdk::pubkey::Pubkey;
 use spl_associated_token_account::get_associated_token_address;
 use std::env;
-use tokio_tungstenite::connect_async;
+use std::str::FromStr;
+use std::sync::atomic::AtomicU32;
+use std::sync::Arc;
+use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio_tungstenite::tungstenite::Error;
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+
+type RequestId = u32;
+type SolverId = String;
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ClientMessage {
+    SolverRegister(SignedPayload<SolverRegisterRequest>),
+    AuctionBid(SignedPayload<AuctionBidRequest>),
+    QuoteResponse(QuoteResponse),
+    ErrorResponse(ErrorResponse),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ServerMessage {
+    SolverRegisterResponse(SolverRegisterResponse),
+    NewIntent(NewIntentMessage),
+    AuctionResult(AuctionResultMessage),
+    ErrorResponse(ErrorResponse),
+    QuoteRequest(QuoteRequest),
+}
+
+#[derive(Serialize, Deserialize)]
+struct QuoteRequest {
+    pub src_chain: Network,
+    pub src_address: String,
+    pub token_in: String,
+    pub amount_in: String,
+    pub dst_chain: Network,
+    pub dst_address: String,
+    pub token_out: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct QuoteResponse {
+    pub token_out: String,
+    pub amount_out: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct SolverQuoteResponse {
+    solver_id: SolverId,
+    #[serde(flatten)]
+    response: QuoteResponse,
+}
+
+#[derive(Serialize)]
+struct SolverRegisterRequest {
+    solver_id: String,
+    solver_addresses: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SolverRegisterResponse {
+    message: String,
+}
+
+#[derive(Serialize)]
+struct AuctionBidRequest {
+    intent_id: String,
+    solver_id: String,
+    amount: String,
+}
+
+#[derive(Serialize)]
+struct SignedPayload<T: Serialize> {
+    payload: T,
+    hash: H256,
+    signature: Signature,
+}
+
+#[derive(Serialize, Deserialize, Deref, DerefMut)]
+pub struct Identified<T> {
+    #[deref]
+    #[deref_mut]
+    payload: T,
+    pub(crate) id: RequestId,
+}
+
+impl<T> Identified<T> {
+    pub fn new(payload: T, id: RequestId) -> Self {
+        Identified { payload, id }
+    }
+}
+
+#[derive(Deserialize)]
+struct NewIntentMessage {
+    intent_id: String,
+    intent: PostIntentInfo,
+}
+
+#[derive(Deserialize)]
+struct AuctionResultMessage {
+    intent_id: String,
+    amount: Option<String>,
+    message: String,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ErrorResponse {
+    message: String,
+}
+
+struct Solver {
+    solver_id: SolverId,
+    request_id: Arc<AtomicU32>,
+    ws_sender: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Network {
+    Solana,
+    Ethereum,
+}
+
+impl ToString for Network {
+    fn to_string(&self) -> String {
+        format!("{:?}", self).to_lowercase()
+    }
+}
+
+const BRIDGE_TOKEN: &'static str = "USDT";
 
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
-    let server_addr = env::var("COMPOSABLE_ENDPOINT").unwrap_or_else(|_| String::from(""));
+    env_logger::init();
+    let server_addr =
+        env::var("COMPOSABLE_ENDPOINT").unwrap_or_else(|_| String::from("ws://34.78.217.187:8080"));
 
-    let (ws_stream, _) = connect_async(server_addr).await.expect("Failed to connect");
+    let (ws_stream, _) = connect_async(format!("{}/ws", server_addr))
+        .await
+        .expect("Failed to connect");
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
 
-    let mut json_data = json!({
-        "code": 1,
-        "msg": {
-            "solver_id": SOLVER_ID.to_string(),
-            "solver_addresses": SOLVER_ADDRESSES,
-        }
-    });
+    let mut solver = Solver {
+        solver_id: SOLVER_ID.to_string(),
+        request_id: Arc::new(AtomicU32::new(0)),
+        ws_sender,
+    };
 
-    create_keccak256_signature(&mut json_data, SOLVER_PRIVATE_KEY.to_string())
-        .await
-        .unwrap();
+    let register_request = SolverRegisterRequest {
+        solver_id: solver.solver_id.clone(),
+        solver_addresses: SOLVER_ADDRESSES
+            .into_iter()
+            .map(ToString::to_string)
+            .collect(),
+    };
 
-    if json_data.get("code").unwrap() == "0" {
-        println!("{:#?}", json_data);
-        return;
-    }
+    let register_request =
+        create_keccak256_signature(register_request, SOLVER_PRIVATE_KEY.to_string())
+            .await
+            .unwrap();
 
-    ws_sender
-        .send(Message::Text(json_data.to_string()))
-        .await
-        .expect("Failed to send initial message");
+    // Serialize the message
+    let message = ClientMessage::SolverRegister(register_request);
+    solver.identify_and_send(&message).await.unwrap();
 
     while let Some(msg) = ws_receiver.next().await {
+        if let Err(e) = solver.handle_message(msg).await {
+            error!("Error handling message: {}", e);
+        }
+    }
+
+    // TODO: auto-reconnect
+    println!("Auctioneer went down, please reconnect");
+}
+
+impl Solver {
+    pub async fn send_raw<T: Serialize>(&mut self, val: &T) -> anyhow::Result<()> {
+        let val = serde_json::to_string(val)?;
+        let message = Message::Text(val);
+        self.ws_sender.send(message).await?;
+        Ok(())
+    }
+
+    pub async fn identify_and_send<T: Serialize>(&mut self, val: &T) -> anyhow::Result<()> {
+        let req_id = self
+            .request_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let ident_val = Identified::new(val, req_id);
+        self.send_raw(&ident_val).await
+    }
+
+    pub async fn reply<T: Serialize>(
+        &mut self,
+        val: &T,
+        request_id: RequestId,
+    ) -> anyhow::Result<()> {
+        let ident_val = Identified::new(val, request_id);
+        self.send_raw(&ident_val).await
+    }
+
+    async fn handle_message(&mut self, msg: Result<Message, Error>) -> anyhow::Result<Option<()>> {
         match msg {
             Ok(Message::Text(text)) => {
-                let parsed: Value = serde_json::from_str(&text).unwrap();
-                let code = parsed.get("code").unwrap().as_u64().unwrap();
+                debug!("Received message: {}", text);
+                let ident_server_message: Identified<ServerMessage> =
+                    match serde_json::from_str(&text) {
+                        Ok(msg) => msg,
+                        Err(err) => {
+                            eprintln!("Failed to parse server message: {:?}", err);
+                            return Ok(Some(()));
+                        }
+                    };
 
-                println!("{:#?}", parsed);
-
-                if code == 0 {
-                    // error
-                } else if code == 1 {
-                    // participate auction
-                    let intent_id = parsed
-                        .get("msg")
-                        .unwrap()
-                        .get("intent_id")
-                        .and_then(Value::as_str)
-                        .unwrap();
-                    let intent_str = parsed
-                        .get("msg")
-                        .unwrap()
-                        .get("intent")
-                        .unwrap()
-                        .to_string();
-                    let intent_value: Value = serde_json::from_str(&intent_str).unwrap();
-                    let intent_info: PostIntentInfo = serde_json::from_value(intent_value).unwrap();
-
-                    // calculate best quote
-                    let final_amount = get_simulate_swap_intent(
-                        &intent_info,
-                        &intent_info.src_chain,
-                        &intent_info.dst_chain,
-                        &String::from("USDT"),
+                let id = ident_server_message.id;
+                if let Err(e) = self.process_server_message(ident_server_message).await {
+                    error!("Error processing server message: {}", e);
+                    self.reply(
+                        &ClientMessage::ErrorResponse(ErrorResponse {
+                            message: format!("Error processing message: {}", e),
+                        }),
+                        id,
                     )
-                    .await;
+                    .await?;
+                }
+                Ok(Some(()))
+            }
+            Ok(Message::Close(_)) | Err(_) => Ok(None),
+            _ => Ok(Some(())),
+        }
+    }
 
-                    // decide if participate or not
-                    let mut amount_out_min = U256::zero();
+    async fn process_server_message(
+        &mut self,
+        ident_server_message: Identified<ServerMessage>,
+    ) -> anyhow::Result<()> {
+        let server_message = ident_server_message.payload;
+        let req_id = ident_server_message.id;
+        match server_message {
+            ServerMessage::SolverRegisterResponse(response) => {
+                println!("Solver registered: {}", response.message);
+            }
+            ServerMessage::NewIntent(new_intent) => {
+                // Participate in auction
+                let intent_id = new_intent.intent_id;
+                let intent_info = new_intent.intent;
+
+                // Calculate best quote
+                let final_amount = get_simulate_swap_intent(
+                    &intent_info,
+                    &intent_info.src_chain,
+                    &intent_info.dst_chain,
+                    BRIDGE_TOKEN,
+                )
+                .await;
+
+                // Decide whether to participate
+                let amount_out_min =
                     if let OperationOutput::SwapTransfer(transfer_output) = &intent_info.outputs {
-                        amount_out_min = U256::from_dec_str(&transfer_output.amount_out).unwrap();
-                    }
+                        U256::from_dec_str(&transfer_output.amount_out).unwrap_or(U256::zero())
+                    } else {
+                        U256::zero()
+                    };
 
-                    let final_amount = U256::from_dec_str(&final_amount).unwrap();
+                let final_amount_u256 = U256::from_dec_str(&final_amount).unwrap_or(U256::zero());
 
-                    println!("User wants {amount_out_min} token_out, you can provide {final_amount} token_out (after FLAT_FEES + COMISSION)");
+                println!(
+                    "User wants {} token_out, you can provide {} token_out (after fees and commission)",
+                    amount_out_min, final_amount_u256
+                );
 
-                    if final_amount > amount_out_min {
-                        let mut json_data = json!({
-                            "code": 2,
-                            "msg": {
-                                "intent_id": intent_id,
-                                "solver_id": SOLVER_ID.to_string(),
-                                "amount": final_amount.to_string()
-                            }
-                        });
+                if final_amount_u256 > amount_out_min {
+                    // Create AuctionBidRequest
+                    let auction_bid_request = AuctionBidRequest {
+                        intent_id: intent_id.clone(),
+                        solver_id: SOLVER_ID.to_string(),
+                        amount: final_amount.clone(),
+                    };
 
-                        create_keccak256_signature(&mut json_data, SOLVER_PRIVATE_KEY.to_string())
-                            .await
-                            .unwrap();
+                    // Create signature
+                    let auction_bid_request = create_keccak256_signature(
+                        auction_bid_request,
+                        SOLVER_PRIVATE_KEY.to_string(),
+                    )
+                    .await
+                    .unwrap();
 
-                        ws_sender
-                            .send(Message::text(json_data.to_string()))
-                            .await
-                            .expect("Failed to send message");
+                    // Serialize the message
+                    let message = ClientMessage::AuctionBid(auction_bid_request);
+                    self.reply(&message, req_id).await.unwrap();
 
+                    // Store the intent
+                    {
                         let mut intents = INTENTS.write().await;
-                        intents.insert(intent_id.to_string(), intent_info);
-                        drop(intents);
-                    }
-                } else if code == 3 {
-                    // solver registered
-                } else if code == 4 {
-                    let intent_id = parsed
-                        .get("msg")
-                        .unwrap()
-                        .get("intent_id")
-                        .and_then(Value::as_str)
-                        .unwrap();
-                    let amount = parsed
-                        .get("msg")
-                        .unwrap()
-                        .get("amount")
-                        .and_then(Value::as_str);
-
-                    if let Some(amount) = amount {
-                        let msg = parsed
-                            .get("msg")
-                            .unwrap()
-                            .get("msg")
-                            .and_then(Value::as_str)
-                            .unwrap()
-                            .to_string();
-
-                        if msg.contains("won") {
-                            let intent;
-                            {
-                                let intents = INTENTS.read().await;
-                                intent = intents.get(intent_id).unwrap().clone();
-                                drop(intents);
-                            }
-
-                            if intent.dst_chain == "solana" {
-                                handle_solana_execution(&intent, intent_id, amount)
-                                    .await
-                                    .unwrap();
-                            } else if intent.dst_chain == "ethereum" {
-                                handle_ethereum_execution(&intent, U256::from_dec_str(intent_id).unwrap(), amount, intent.src_chain == intent.dst_chain)
-                                    .await
-                                    .unwrap();
-                            } else if intent.dst_chain == "mantis" {
-                                handle_mantis_execution(&intent, intent_id)
-                                    .await
-                                    .unwrap();
-                            }
-
-                            // ws_sender.send(Message::text(msg)).await.expect("Failed to send message");
-                        }
-
-                        {
-                            let mut intents = INTENTS.write().await;
-                            intents.remove(&intent_id.to_string());
-                            drop(intents);
-                        }
+                        intents.insert(intent_id.clone(), intent_info);
                     }
                 }
             }
-            Ok(Message::Close(_)) | Err(_) => break,
-            _ => {}
+            ServerMessage::AuctionResult(auction_result) => {
+                let intent_id = auction_result.intent_id;
+                let intent_id_u256 = intent_id.parse::<U256>().map_err(|e| anyhow::anyhow!(e))?;
+                let amount = auction_result.amount;
+
+                if let Some(amount) = amount {
+                    println!(
+                        "Auction result for {}: {}",
+                        intent_id, auction_result.message
+                    );
+
+                    // Retrieve the intent
+                    let intent = {
+                        let intents = INTENTS.read().await;
+                        intents.get(&intent_id).cloned()
+                    };
+
+                    if let Some(intent) = intent {
+                        if auction_result.message.contains("won") {
+                            // Handle execution
+                            let handle_result = match intent.dst_chain.as_str() {
+                                "solana" => {
+                                    handle_solana_execution(&intent, &intent_id, &amount).await
+                                }
+                                "ethereum" => {
+                                    handle_ethereum_execution(
+                                        &intent,
+                                        intent_id_u256,
+                                        &amount,
+                                        intent.src_chain == intent.dst_chain,
+                                    )
+                                    .await
+                                }
+                                "mantis" => handle_mantis_execution(&intent, &intent_id).await,
+                                _ => Err("Unsupported destination chain".to_string()),
+                            };
+
+                            if let Err(err) = handle_result {
+                                eprintln!("Failed to handle execution: {}", err);
+                            }
+                        }
+
+                        // Remove the intent
+                        {
+                            let mut intents = INTENTS.write().await;
+                            intents.remove(&intent_id);
+                        }
+                    } else {
+                        eprintln!("Intent not found for intent_id: {}", intent_id);
+                    }
+                }
+            }
+            ServerMessage::ErrorResponse(error_response) => {
+                eprintln!("Error from server: {}", error_response.message);
+            }
+            ServerMessage::QuoteRequest(req) => {
+                let quote_market = self.quote_market(&req).await;
+                let message = ClientMessage::QuoteResponse(QuoteResponse {
+                    token_out: req.token_out,
+                    amount_out: quote_market,
+                });
+                self.reply(&message, req_id).await.unwrap();
+            }
         }
+        Ok(())
     }
 
-    println!("Auctioner went down, please reconnect");
+    async fn quote_market(&self, quote_request: &QuoteRequest) -> String {
+        let src_chain = &quote_request.src_chain;
+        let dst_chain = &quote_request.dst_chain;
+        let intent_info = PostIntentInfo {
+            function_name: "".to_string(),
+            src_chain: src_chain.to_string(),
+            dst_chain: dst_chain.to_string(),
+            inputs: OperationInput::SwapTransfer(SwapTransferInput {
+                token_in: quote_request.token_in.clone(),
+                amount_in: quote_request.amount_in.clone(),
+                src_chain_user: quote_request.src_address.clone(),
+                timeout: "".to_string(),
+            }),
+            outputs: OperationOutput::SwapTransfer(SwapTransferOutput {
+                token_out: quote_request.token_out.clone(),
+                amount_out: "1".to_string(),
+                dst_chain_user: quote_request.dst_address.clone(),
+            }),
+        };
+        get_simulate_swap_intent(
+            &intent_info,
+            &src_chain.to_string(),
+            &dst_chain.to_string(),
+            BRIDGE_TOKEN,
+        )
+        .await
+    }
 }
