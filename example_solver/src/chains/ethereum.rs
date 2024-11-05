@@ -106,7 +106,7 @@ pub mod ethereum_chain {
         intent: &PostIntentInfo,
         intent_id: U256,
         amount: &str,
-        single_domain: bool
+        single_domain: bool,
     ) -> Result<(), String> {
         let usdt_contract_address = "0xdac17f958d2ee523a2206206994597c13d831ec7";
 
@@ -146,7 +146,9 @@ pub mod ethereum_chain {
 
         // swap USDT -> token_out
         if !token_out.eq_ignore_ascii_case(usdt_contract_address) {
-            if let Err(e) = ethereum_trasnfer_swap(&intent_id.to_string(), intent.clone(), amount).await {
+            if let Err(e) =
+                ethereum_trasnfer_swap(&intent_id.to_string(), intent.clone(), amount).await
+            {
                 return Err(format!(
                     "Error occurred on Ethereum swap USDT -> token_out (solver must approve USDT to Paraswap 0x216b4b4ba9f3e719726886d34a177484278bfcae first): {}",
                     e
@@ -550,42 +552,41 @@ pub mod ethereum_chain {
         dst_user: Address,
         single_domain: bool,
         solver_out: &str,
-        value_in_wei: U256
+        value_in_wei: U256,
     ) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
         let provider = Provider::<Http>::try_from(provider_url)?;
         let provider = Arc::new(provider);
-    
+
         let wallet: LocalWallet = private_key.parse()?;
         let wallet = wallet.with_chain_id(1u64); // Mainnet
         let wallet = Arc::new(SignerMiddleware::new(provider.clone(), wallet));
-    
+
         let contract_address = contract_address.parse::<Address>()?;
         let contract = Escrow::new(contract_address, wallet.clone());
-    
+
         let solver_transfer_data = (
             intent_id,
             token_out,
             amount_out,
             dst_user,
             single_domain,
-            solver_out.to_string()
+            solver_out.to_string(),
         );
-    
+
         // let gas_price = provider.get_gas_price().await.unwrap();
         let contract = contract
             .send_funds_to_user(solver_transfer_data)
             .value(value_in_wei);
-            // .gas_price(gas_price);  // Set the gas price
-    
+        // .gas_price(gas_price);  // Set the gas price
+
         let pending_tx = contract.send().await?;
-    
+
         let tx_receipt = pending_tx
             .await?
             .expect("Failed to fetch transaction receipt");
-    
+
         Ok(tx_receipt)
     }
-    
 
     pub async fn approve_erc20(
         provider_url: &str,

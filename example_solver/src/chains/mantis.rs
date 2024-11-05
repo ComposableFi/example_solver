@@ -25,7 +25,8 @@ pub mod mantis_chain {
 
     pub async fn handle_mantis_execution(
         intent_info: &PostIntentInfo,
-        intent_id: &str
+        intent_id: &str,
+        amount: &str,
     ) -> Result<(), String> {
         let rpc_url = env::var("MANTIS_RPC").expect("MANTIS_RPC must be set");
 
@@ -59,6 +60,7 @@ pub mod mantis_chain {
             intent_info.src_chain == intent_info.dst_chain,
             rpc_url,
             Pubkey::from_str("61beRZG1h3SvPgGYh9tXhx42jABkMjbMQWpgqUqXw2hw").unwrap(),
+            amount.parse::<u64>().unwrap(),
         )
         .await
         {

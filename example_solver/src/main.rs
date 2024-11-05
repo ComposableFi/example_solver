@@ -158,11 +158,16 @@ async fn main() {
                                     .await
                                     .unwrap();
                             } else if intent.dst_chain == "ethereum" {
-                                handle_ethereum_execution(&intent, U256::from_dec_str(intent_id).unwrap(), amount, intent.src_chain == intent.dst_chain)
-                                    .await
-                                    .unwrap();
+                                handle_ethereum_execution(
+                                    &intent,
+                                    U256::from_dec_str(intent_id).unwrap(),
+                                    amount,
+                                    intent.src_chain == intent.dst_chain,
+                                )
+                                .await
+                                .unwrap();
                             } else if intent.dst_chain == "mantis" {
-                                handle_mantis_execution(&intent, intent_id)
+                                handle_mantis_execution(&intent, intent_id, amount)
                                     .await
                                     .unwrap();
                             }
