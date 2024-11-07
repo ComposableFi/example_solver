@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// 0x6eC6b9cbD78b6ed44be854e831067FE0D2D301c5
+// 0x393D402F48F0F468030082b5410a58cA2231FD34
 pragma solidity ^0.8.26;
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -25,9 +25,10 @@ interface IICS20TransferBank {
  * @dev Struct representing a Solver's transfer.
  * Contains data for transferring tokens from a solver to a user.
  */
- // [0,"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",1,"0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3",1,"0x0362110922F923B57b7EfF68eE7A51827b2dF4b4"]
+ // ["0","0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",10,"0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3",false,["WdFwv2TiGksf6x5CCwC6Svrz6JYzgCw4P1MC4Kcn3UE","7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3","XSUoLRkKahnVkrVteuJuLcPuhn2uPecFHM3zCcgsAQs","8q4qp8hMSfUZZcetiJrW7jD9n4pWmSA8ua19CcdT6p3H","Sysvar1nstructions1111111111111111111111111","TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA","Hhe21KK8Zs6QB8nwDqF2b59yUSKDWmF6t8c2yzodgiqg","FFFhqkq4DKhdeGeLqsi72u7g8GqdgQyrqu4mdRo9kKDt"]]
+ // [0,"0x514910771AF9Ca656af840dff83E8264EcF986CA",1,"0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3",false,["","","","","","","",""]]
 struct SolverTransfer {
-    uint intentId;             // Unique identifier for the intent
+    string intentId;           // Unique identifier for the intent
     address tokenOut;          // Address of the token to be transferred
     uint256 amountOut;         // Amount of tokens to be transferred
     address dstUser;           // Destination user for the transfer
@@ -60,7 +61,7 @@ struct IntentInfo {
     string winnerSolver;       // Address of the winning solver
     uint256 timeout;           // Timeout for the intent
 }
-// ["0x514910771AF9Ca656af840dff83E8264EcF986CA","1000","0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3","0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","1","0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3","","18000000000000000000"]
+// ["0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48","1","0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3","0x514910771AF9Ca656af840dff83E8264EcF986CA","1","0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3","","18000000000000000000"]
 // ["0x514910771AF9Ca656af840dff83E8264EcF986CA","1000","0xd41fb9e1dA5255dD994b029bC3C7e06ea8105BF3","Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB","1","FFFhqkq4DKhdeGeLqsi72u7g8GqdgQyrqu4mdRo9kKDt","","18000000000000000000"]
 
 /**
@@ -104,8 +105,8 @@ contract Escrow {
     using SafeERC20 for IERC20;
 
     // Events emitted for cross-chain communication and state updates
-    event CrossChainMsgSolver(uint intentId, string winnerSolver, string token, address user, uint amount);
-    event CrossChainMsgUser(uint intentId);
+    event CrossChainMsgSolver(string intentId, string winnerSolver, string token, address user, uint amount);
+    event CrossChainMsgUser(string intentId);
     event FundsEscrowed(uint intentId);
     event UpdateIntent(uint intentId);
     event SendFundsToUserEvent(uint intent_id, string winnerSolver, address tokenIn, uint amountIn, string tokenOut, string dstUser, uint256 amountOut);
@@ -267,7 +268,8 @@ contract Escrow {
     ) public payable {
         if (solverTransferData.singleDomain) {
             // Single domain transfer: execute transfer from user to solver
-            IntentInfo memory intent = intents[solverTransferData.intentId];
+            uint newIntentId = parseUint(solverTransferData.intentId);
+            IntentInfo memory intent = intents[newIntentId];
             require(intent.srcUser != address(0), "intent doesn't exist");
             require(parseAddress(intent.winnerSolver) == msg.sender, "intent.winnerSolver != msg.sender");
 
@@ -281,7 +283,7 @@ contract Escrow {
             }
 
             emit SendFundsToUserEvent(
-                solverTransferData.intentId,
+                newIntentId,
                 intent.winnerSolver, 
                 intent.tokenIn, 
                 intent.amountIn,
@@ -290,7 +292,7 @@ contract Escrow {
                 intent.amountOut
             );
 
-            delete intents[solverTransferData.intentId];
+            delete intents[newIntentId];
         } else {
             // Execute solver transfer to user
             IERC20(solverTransferData.tokenOut).safeTransferFrom(msg.sender, solverTransferData.dstUser, solverTransferData.amountOut);
@@ -309,6 +311,7 @@ contract Escrow {
                 constructJson(
                     next_hop_params,
                     solverTransferData.accounts,
+                    solverTransferData.intentId,
                     solver,
                     addressToString(solverTransferData.tokenOut),
                     addressToString(solverTransferData.dstUser),
@@ -329,6 +332,7 @@ contract Escrow {
     function constructJson(
         HopParams memory params,
         string [] memory accounts,
+        string memory intent_id,
         string memory from,
         string memory token,
         string memory to,
@@ -344,7 +348,8 @@ contract Escrow {
         // Construct the memo field with params2 and sender
         string memory memo = string(abi.encodePacked(
             "8",
-            ",", accounts[0], accounts[1], accounts[2], accounts[3], accounts[4], accounts[5], accounts[6], accounts[7], 
+            ",", accounts[0], ",", accounts[1], ",", accounts[2], ",", accounts[3], ",", accounts[4], ",", accounts[5], ",", accounts[6], ",", accounts[7], 
+            ",", intent_id,
             ",false", 
             ",", from,
             ",", token,
@@ -370,13 +375,14 @@ contract Escrow {
      * @param singleDomain Boolean flag indicating if the intent is within a single domain.
      */
     function userCancelIntent(
-        uint intentId,
+        string memory intentId,
         bool singleDomain,
         string[] calldata accounts
     ) public payable {
         if (singleDomain) {
             // Single domain transfer cancellation
-            IntentInfo memory intent = intents[intentId];
+            uint newIntentId = parseUint(intentId);
+            IntentInfo memory intent = intents[newIntentId];
             require(intent.timeout < block.timestamp, "intent.timeout > block.timestamp");
             // require(keccak256(abi.encodePacked(intent.tokenIn)) == keccak256(abi.encodePacked(intent.tokenOut)), "denom doesn't have DUMMY token");
 
@@ -386,7 +392,7 @@ contract Escrow {
                 IERC20(intent.tokenIn).safeTransfer(msg.sender, intent.amountIn);
             }
 
-            delete intents[intentId];
+            delete intents[newIntentId];
         } else {
             ics20TransferBank.sendTransfer{value: msg.value}(
                 picasso_params.denomTimeout,
@@ -399,6 +405,7 @@ contract Escrow {
                 constructJson(
                     next_hop_params,
                     accounts,
+                    intentId,
                     "",
                     "",
                     "",
@@ -607,7 +614,7 @@ contract Escrow {
         }
         return string(bstr);
     }
-
+//095ea7b3000000000000000000000000148acd3cd4d6a17cd2abbecd0745b09b62c64f840000000000000000000000000000000000000001431e0fae6d7217caa0000000
     /**
      * @dev Execute a call to a target address with the provided data.
      * @param target The target address.
