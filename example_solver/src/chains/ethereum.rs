@@ -565,7 +565,7 @@ pub mod ethereum_chain {
         let contract = Escrow::new(contract_address, wallet.clone());
 
         let solver_transfer_data = (
-            intent_id,
+            intent_id.to_string(),
             token_out,
             amount_out,
             dst_user,
