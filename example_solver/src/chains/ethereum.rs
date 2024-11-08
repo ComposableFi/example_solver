@@ -73,7 +73,7 @@ pub mod ethereum_chain {
             "inputs": [
                 {
                     "components": [
-                        { "name": "intentId", "type": "uint256" },
+                        { "name": "intentId", "type": "string" },
                         { "name": "tokenOut", "type": "address" },
                         { "name": "amountOut", "type": "uint256" },
                         { "name": "dstUser", "type": "address" },
