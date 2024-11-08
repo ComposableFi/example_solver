@@ -19,6 +19,8 @@ pub mod ethereum_chain {
     use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
+    use solana_sdk::pubkey::Pubkey;
+    use spl_associated_token_account::get_associated_token_address;
 
     #[derive(Deserialize)]
     struct GasPrice {
@@ -78,7 +80,7 @@ pub mod ethereum_chain {
                         { "name": "amountOut", "type": "uint256" },
                         { "name": "dstUser", "type": "address" },
                         { "name": "singleDomain", "type": "bool" },
-                        { "name": "solverOut", "type": "string" }
+                        { "name": "accounts", "type": "string[]"}
                     ],
                     "name": "solverTransferData",
                     "type": "tuple"
@@ -104,9 +106,8 @@ pub mod ethereum_chain {
 
     pub async fn handle_ethereum_execution(
         intent: &PostIntentInfo,
-        intent_id: U256,
-        amount: &str,
-        single_domain: bool,
+        intent_id: &str,
+        amount: &str
     ) -> Result<(), String> {
         let usdt_contract_address = "0xdac17f958d2ee523a2206206994597c13d831ec7";
 
@@ -133,6 +134,7 @@ pub mod ethereum_chain {
         let mut token_in = String::default();
         let mut token_out = String::default();
         let mut amount_in = String::default();
+        let mut src_user = String::default();
         let mut dst_user = String::default();
 
         if let OperationOutput::SwapTransfer(transfer_output) = &intent.outputs {
@@ -140,6 +142,7 @@ pub mod ethereum_chain {
             dst_user = transfer_output.dst_chain_user.clone();
         }
         if let OperationInput::SwapTransfer(transfer_input) = &intent.inputs {
+            src_user = transfer_input.src_chain_user.clone();
             token_in = transfer_input.token_in.clone();
             amount_in = transfer_input.amount_in.clone();
         }
@@ -182,13 +185,15 @@ pub mod ethereum_chain {
             &rpc_url,
             &private_key,
             ESCROW_SC_ETHEREUM,
-            intent_id,
+            &intent_id.to_string(),
+            &token_in,
             Address::from_str(&token_out).unwrap(),
             U256::from_dec_str(&amount).unwrap(),
+            &src_user,
             Address::from_str(&dst_user).unwrap(),
-            single_domain,
-            solver_out,
+            intent.src_chain == intent.dst_chain,
             U256::zero(),
+            &solver_out.to_string()
         )
         .await
         {
@@ -546,13 +551,15 @@ pub mod ethereum_chain {
         provider_url: &str,
         private_key: &str,
         contract_address: &str,
-        intent_id: U256,
+        intent_id: &String,
+        token_in: &String,
         token_out: Address,
         amount_out: U256,
+        src_user: &String,
         dst_user: Address,
         single_domain: bool,
-        solver_out: &str,
         value_in_wei: U256,
+        solver_out: &String
     ) -> Result<TransactionReceipt, Box<dyn std::error::Error>> {
         let provider = Provider::<Http>::try_from(provider_url)?;
         let provider = Arc::new(provider);
@@ -564,13 +571,37 @@ pub mod ethereum_chain {
         let contract_address = contract_address.parse::<Address>()?;
         let contract = Escrow::new(contract_address, wallet.clone());
 
+        let accounts = if single_domain {
+            vec!()
+        } else {
+            let auctioneer_state = Pubkey::find_program_address(&[b"auctioneer"], &Pubkey::from_str(&bridge_escrow::ID.to_string()).unwrap()).0;
+            let token_in = Pubkey::from_str(&token_in).unwrap();
+
+            let escrow_token_account = get_associated_token_address(&auctioneer_state, &token_in);
+            let solver_token_account = get_associated_token_address(&Pubkey::from_str(&solver_out).unwrap(), &token_in);
+
+            let intent_state =
+            Pubkey::find_program_address(&[b"intent", intent_id.as_bytes()], &bridge_escrow::ID).0;
+
+            vec!(
+                auctioneer_state.to_string(),
+                token_in.to_string(),
+                escrow_token_account.to_string(),
+                solver_token_account.to_string(),
+                solana_program::sysvar::instructions::ID.to_string(),
+                anchor_spl::token::ID.to_string(),
+                intent_state.to_string(),
+                src_user.to_string()
+            )
+        };
+
         let solver_transfer_data = (
             intent_id.to_string(),
             token_out,
             amount_out,
             dst_user,
             single_domain,
-            solver_out.to_string(),
+            accounts
         );
 
         // let gas_price = provider.get_gas_price().await.unwrap();

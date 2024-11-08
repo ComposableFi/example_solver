@@ -2342,6 +2342,7 @@ dependencies = [
  "serde_json",
  "solana-client",
  "solana-ibc 0.0.3 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=fast-bridge)",
+ "solana-program",
  "solana-sdk",
  "spl-associated-token-account 3.0.4",
  "spl-token 3.5.0",

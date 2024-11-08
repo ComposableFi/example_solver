@@ -32,6 +32,7 @@ strum = "0.26.2"
 strum_macros = "0.26.4"
 secp256k1 = "0.27.0"
 web3 = "0.19.0"
+solana-program = "1.17.30"
 bridge-escrow = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "upgrade", package = "bridge-escrow" }
 solana-ibc = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", features = ["cpi"] }
 lib = { git = "https://github.com/ComposableFi/emulated-light-client.git", branch = "fast-bridge", features = ["solana-program"] }
