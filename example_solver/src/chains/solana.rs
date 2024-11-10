@@ -24,6 +24,7 @@ pub mod solana_chain {
     use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
+    use tokio::time::sleep;
 
     // DUMMY MANTIS = 78grvu3nEsQsx3tdMB8BqedJF2hyJx1GPgjGQZWDrDTS
 
@@ -530,47 +531,61 @@ pub mod solana_chain {
                 receiver_token_account = Some(_receiver_token_account);
                 fee_collector = Some(_fee_collector);
 
-                program
-                    .request()
-                    .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
-                    .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
-                    .accounts(bridge_escrow::accounts::SplTokenTransferCrossChain {
-                        auctioneer_state,
-                        solver: solver_clone.pubkey(),
-                        auctioneer: auctioneer,
-                        token_in: None,
-                        token_out: Pubkey::from_str(&token_out_mint).unwrap(),
-                        auctioneer_token_in_account: None,
-                        solver_token_in_account: None,
-                        solver_token_out_account: solver_token_out_addr,
-                        user_token_out_account: user_token_out_addr,
-                        token_program: anchor_spl::token::ID,
-                        associated_token_program: anchor_spl::associated_token::ID,
-                        system_program: anchor_lang::solana_program::system_program::ID,
-                        ibc_program: Some(solana_ibc::ID),
-                        receiver: Some(Pubkey::from_str(&user).unwrap()),
-                        storage: storage,
-                        trie: trie,
-                        chain: chain,
-                        mint_authority: mint_authority,
-                        token_mint: dummy_token_mint,
-                        escrow_account: escrow_account,
-                        receiver_token_account: receiver_token_account,
-                        fee_collector: fee_collector,
-                    })
-                    .args(bridge_escrow::instruction::SendFundsToUserCrossChain {
-                        intent_id: intent_id.clone(),
-                        amount_out: amount_out_cross_chain,
-                        solver_out: solver_out,
-                    })
-                    .payer(solver_clone.clone())
-                    .signer(&*solver_clone)
-                    .send_with_spinner_and_config(RpcSendTransactionConfig {
-                        skip_preflight: true,
-                        ..RpcSendTransactionConfig::default()
-                    })
-                    .map_err(|e| format!("Transaction failed: {}", e))
-                    .map(|_| ()) // Map the Signature result to ()
+                loop {
+                    let result = program
+                        .request()
+                        .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
+                        .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
+                        .accounts(bridge_escrow::accounts::SplTokenTransferCrossChain {
+                            auctioneer_state,
+                            solver: solver_clone.pubkey(),
+                            auctioneer: auctioneer,
+                            token_in: None,
+                            token_out: Pubkey::from_str(&token_out_mint).unwrap(),
+                            auctioneer_token_in_account: None,
+                            solver_token_in_account: None,
+                            solver_token_out_account: solver_token_out_addr,
+                            user_token_out_account: user_token_out_addr,
+                            token_program: anchor_spl::token::ID,
+                            associated_token_program: anchor_spl::associated_token::ID,
+                            system_program: anchor_lang::solana_program::system_program::ID,
+                            ibc_program: Some(solana_ibc::ID),
+                            receiver: Some(Pubkey::from_str(&user).unwrap()),
+                            storage: storage,
+                            trie: trie,
+                            chain: chain,
+                            mint_authority: mint_authority,
+                            token_mint: dummy_token_mint,
+                            escrow_account: escrow_account,
+                            receiver_token_account: receiver_token_account,
+                            fee_collector: fee_collector,
+                        })
+                        .args(bridge_escrow::instruction::SendFundsToUserCrossChain {
+                            intent_id: intent_id.clone(),
+                            amount_out: amount_out_cross_chain,
+                            solver_out: solver_out.clone(),
+                        })
+                        .payer(solver_clone.clone())
+                        .signer(&*solver_clone)
+                        .send_with_spinner_and_config(RpcSendTransactionConfig {
+                            skip_preflight: true,
+                            ..RpcSendTransactionConfig::default()
+                        });
+
+                    match &result {
+                        Ok(_) => break Ok(()), // Transaction succeeded, exit loop
+                        Err(e) if e.to_string().contains("unable to confirm transaction") => {
+                            eprintln!("Transaction failed: {}. Retrying...", e);
+                            let _ = sleep(Duration::from_secs(1));
+                        }
+                        Err(e) => {
+                            break Err(format!(
+                                "Transaction failed due to a non-retryable error: {}",
+                                e
+                            ))
+                        } // Break on other errors
+                    }
+                }
             } else {
                 storage = Some(_storage);
                 trie = Some(_trie);
@@ -594,51 +609,69 @@ pub mod solana_chain {
                 let auctioneer_token_in_account = Some(token_in_escrow_addr);
                 let solver_token_in_account = Some(solver_token_in_addr);
 
-                program
-                    .request()
-                    .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
-                    .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
-                    .accounts(bridge_escrow::accounts::SplTokenTransfer {
-                        intent: Some(intent_state),
-                        intent_owner: receiver.unwrap(),
-                        auctioneer_state,
-                        solver: solver_clone.pubkey(),
-                        auctioneer: Pubkey::from_str(
-                            "5zCZ3jk8EZnJyG7fhDqD6tmqiYTLZjik5HUpGMnHrZfC",
-                        )
-                        .map_err(|e| format!("Invalid auctioneer pubkey: {}", e))?,
-                        token_in: Some(Pubkey::from_str(&token_in_mint).unwrap()),
-                        token_out: Pubkey::from_str(&token_out_mint)
-                            .map_err(|e| format!("Invalid token_out_mint pubkey: {}", e))?,
-                        auctioneer_token_in_account: auctioneer_token_in_account,
-                        solver_token_in_account: solver_token_in_account,
-                        solver_token_out_account: solver_token_out_addr,
-                        user_token_out_account: user_token_out_addr,
-                        token_program: anchor_spl::token::ID,
-                        associated_token_program: anchor_spl::associated_token::ID,
-                        system_program: anchor_lang::solana_program::system_program::ID,
-                        ibc_program: Some(solana_ibc::ID),
-                        receiver: receiver,
-                        storage: storage,
-                        trie: trie,
-                        chain: chain,
-                        mint_authority: mint_authority,
-                        token_mint: dummy_token_mint,
-                        escrow_account: escrow_account,
-                        receiver_token_account: receiver_token_account,
-                        fee_collector: fee_collector,
-                    })
-                    .args(bridge_escrow::instruction::SendFundsToUser {
-                        intent_id: intent_id.to_string(),
-                    })
-                    .payer(solver_clone.clone())
-                    .signer(&*solver_clone)
-                    .send_with_spinner_and_config(RpcSendTransactionConfig {
-                        skip_preflight: true,
-                        ..Default::default()
-                    })
-                    .map_err(|e| format!("Transaction failed: {}", e))
-                    .map(|_| ()) // Map the Signature result to ()
+                use solana_program::pubkey::Pubkey;
+                use std::time::Duration;
+                use tokio::time::sleep;
+
+                loop {
+                    let result = program
+                        .request()
+                        .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
+                        .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
+                        .accounts(bridge_escrow::accounts::SplTokenTransfer {
+                            intent: Some(intent_state),
+                            intent_owner: receiver.unwrap(),
+                            auctioneer_state,
+                            solver: solver_clone.pubkey(),
+                            auctioneer: Pubkey::from_str(
+                                "5zCZ3jk8EZnJyG7fhDqD6tmqiYTLZjik5HUpGMnHrZfC",
+                            )
+                            .map_err(|e| format!("Invalid auctioneer pubkey: {}", e))?,
+                            token_in: Some(Pubkey::from_str(&token_in_mint).unwrap()),
+                            token_out: Pubkey::from_str(&token_out_mint)
+                                .map_err(|e| format!("Invalid token_out_mint pubkey: {}", e))?,
+                            auctioneer_token_in_account: auctioneer_token_in_account,
+                            solver_token_in_account: solver_token_in_account,
+                            solver_token_out_account: solver_token_out_addr,
+                            user_token_out_account: user_token_out_addr,
+                            token_program: anchor_spl::token::ID,
+                            associated_token_program: anchor_spl::associated_token::ID,
+                            system_program: anchor_lang::solana_program::system_program::ID,
+                            ibc_program: Some(solana_ibc::ID),
+                            receiver: receiver,
+                            storage: storage,
+                            trie: trie,
+                            chain: chain,
+                            mint_authority: mint_authority,
+                            token_mint: dummy_token_mint,
+                            escrow_account: escrow_account,
+                            receiver_token_account: receiver_token_account,
+                            fee_collector: fee_collector,
+                        })
+                        .args(bridge_escrow::instruction::SendFundsToUser {
+                            intent_id: intent_id.to_string(),
+                        })
+                        .payer(solver_clone.clone())
+                        .signer(&*solver_clone)
+                        .send_with_spinner_and_config(RpcSendTransactionConfig {
+                            skip_preflight: true,
+                            ..Default::default()
+                        });
+
+                    match &result {
+                        Ok(_) => break Ok(()), // Transaction succeeded, exit loop
+                        Err(e) if e.to_string().contains("unable to confirm transaction") => {
+                            eprintln!("Transaction failed: {}. Retrying...", e);
+                            let _ = sleep(Duration::from_secs(1));
+                        }
+                        Err(e) => {
+                            break Err(format!(
+                                "Transaction failed due to a non-retryable error: {}",
+                                e
+                            ))
+                        } // Break on other errors
+                    }
+                }
             }
         })
         .await
