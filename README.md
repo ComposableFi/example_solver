@@ -169,7 +169,7 @@ Both Single Domain and Cross-Chain Domain options are designed with the highest 
 - **⚠️ WARNING:** Always use a reliable RPC. Avoid using any unreliable private pools to ensure smooth operations.
 - **⚠️ WARNING:** If the Ethereum swap size is **less** than `ETH FLAT_FEE + COMMISSION` or the Solana swap size is **less** than `SOL FLAT_FEE + COMMISSION`, the solver **will not** participate in the auction.
 - **⚠️ WARNING:** Solvers need to **approve** USDT to Paraswap on Ethereum using the contract address `0x216b4b4ba9f3e719726886d34a177484278bfcae` **only once**.
-- **⚠️ WARNING:** Solvers need to **approve** USDT to Escrow on Ethereum using the contract address `0x393D402F48F0F468030082b5410a58cA2231FD34` **only once**.
+- **⚠️ WARNING:** Solvers need to **approve** USDT to Escrow on Ethereum using the contract address `0x64E78873057769a5fd9A2278E6820666ec7e87f9` **only once**.
 - **⚠️ WARNING:** Optimize `FLAT_FEES` based on gas consumption and **optimize token approvals** to reduce unnecessary costs.
 - **⚠️ WARNING:** The solver's address **must be the same** as the address used to send ETH to the Auctioner.
 

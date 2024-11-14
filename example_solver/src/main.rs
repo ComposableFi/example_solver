@@ -159,8 +159,8 @@ async fn main() {
                                     .unwrap();
                             } else if intent.dst_chain == "ethereum" {
                                 handle_ethereum_execution(&intent, intent_id, amount)
-                                .await
-                                .unwrap();
+                                    .await
+                                    .unwrap();
                             } else if intent.dst_chain == "mantis" {
                                 handle_mantis_execution(&intent, intent_id, amount)
                                     .await
