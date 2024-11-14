@@ -5,6 +5,8 @@ pub mod field_pubkey;
 
 use solana_sdk::transaction::VersionedTransaction;
 use std::{env, fmt, str::FromStr};
+use tokio::time::sleep;
+use tokio::time::Duration;
 
 use {
     serde::{Deserialize, Serialize},
@@ -526,10 +528,19 @@ pub async fn jupiter_swap(
         .map_err(|e| format!("Transaction simulation failed: {}", e))?;
 
     // Send and confirm the transaction
-    rpc_client
-        .send_and_confirm_transaction_with_spinner(&swap_transaction)
-        .await
-        .map_err(|e| format!("Transaction failed: {}", e))?;
+    loop {
+        match rpc_client
+            .send_and_confirm_transaction_with_spinner(&swap_transaction)
+            .await
+        {
+            Ok(_) => break, // Transaction succeeded, exit loop
+            Err(err) if err.to_string().contains("unable to confirm transaction") => {
+                eprintln!("Transaction failed: {}. Retrying...", err);
+                sleep(Duration::from_secs(1)).await; // Adjust delay as needed
+            },
+            Err(_) => break, // Break on other errors
+        }
+    }
 
     Ok(())
 }
