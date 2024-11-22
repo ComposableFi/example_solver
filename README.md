@@ -194,6 +194,7 @@ BRIDGE_TOKEN="USDT" # USDT
 COMISSION="10" # if COMISSION == "1"-> 0.01%
 SOLVER_ID="" # Given by Composable
 COMPOSABLE_ENDPOINT="" # ws IP address Given by Composable
+JITO="" # true or false
 ```
 ## Step 2: Run the Solver
 To run the solver, use the following command:
