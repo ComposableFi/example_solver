@@ -181,6 +181,11 @@ pub mod ethereum_chain {
         };
 
         // solver -> token_out -> user | user -> token_in -> solver
+        let mut value = U256::zero();
+        if token_in.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+            value = U256::from_str(&amount_in).unwrap();
+        }
+
         if let Err(e) = ethereum_send_funds_to_user(
             &rpc_url,
             &private_key,
@@ -192,7 +197,7 @@ pub mod ethereum_chain {
             &src_user,
             Address::from_str(&dst_user).unwrap(),
             intent.src_chain == intent.dst_chain,
-            U256::zero(),
+            value,
             &solver_out.to_string(),
         )
         .await

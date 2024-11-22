@@ -486,6 +486,8 @@ pub async fn jupiter_swap(
     .await
     .map_err(|e| format!("Failed to get quotes: {}", e))?;
 
+    println!("quotes: {:#?}", quotes);
+
     let user_token_out = get_associated_token_address(&memo.user_account, &memo.token_out);
 
     // Check if the user token account exists, and create it if necessary
@@ -535,10 +537,13 @@ pub async fn jupiter_swap(
         {
             Ok(_) => break, // Transaction succeeded, exit loop
             Err(err) if err.to_string().contains("unable to confirm transaction") => {
-                eprintln!("Transaction failed: {}. Retrying...", err);
+                eprintln!("Transaction failed on jupiter: {}. Retrying...", err);
                 sleep(Duration::from_secs(1)).await; // Adjust delay as needed
             },
-            Err(_) => break, // Break on other errors
+            Err(err) => {
+                eprintln!("Transaction failed on jupiter: {}", err);
+                break
+            }, // Break on other errors
         }
     }
 
