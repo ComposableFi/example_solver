@@ -486,8 +486,6 @@ pub async fn jupiter_swap(
     .await
     .map_err(|e| format!("Failed to get quotes: {}", e))?;
 
-    println!("quotes: {:#?}", quotes);
-
     let user_token_out = get_associated_token_address(&memo.user_account, &memo.token_out);
 
     // Check if the user token account exists, and create it if necessary
