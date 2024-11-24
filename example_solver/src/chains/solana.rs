@@ -32,7 +32,7 @@ pub mod solana_chain {
 
     pub const JITO_ADDRESS: Pubkey =
         solana_program::pubkey!("96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5");
-    pub const JITO_TIP_AMOUNT: u64 = 20000;
+    pub const JITO_TIP_AMOUNT: u64 = 40000;
     pub const JITO_BLOCK_ENGINE_URL: &str = "https://mainnet.block-engine.jito.wtf";
     pub const RETRIES: u8 = 5;
 
