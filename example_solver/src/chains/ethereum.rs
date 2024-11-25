@@ -182,8 +182,8 @@ pub mod ethereum_chain {
 
         // solver -> token_out -> user | user -> token_in -> solver
         let mut value = U256::zero();
-        if token_in.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
-            value = U256::from_str(&amount_in).unwrap();
+        if token_out.eq_ignore_ascii_case("0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE") {
+            value = U256::from_str(&amount_out).unwrap();
         }
 
         if let Err(e) = ethereum_send_funds_to_user(
