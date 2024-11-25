@@ -134,12 +134,14 @@ pub mod ethereum_chain {
         let mut token_in = String::default();
         let mut token_out = String::default();
         let mut amount_in = String::default();
+        let mut amount_out = String::default();
         let mut src_user = String::default();
         let mut dst_user = String::default();
 
         if let OperationOutput::SwapTransfer(transfer_output) = &intent.outputs {
             token_out = transfer_output.token_out.clone();
             dst_user = transfer_output.dst_chain_user.clone();
+            amount_out = transfer_output.amount_out.clone();
         }
         if let OperationInput::SwapTransfer(transfer_input) = &intent.inputs {
             src_user = transfer_input.src_chain_user.clone();
