@@ -5,6 +5,7 @@ pub mod field_pubkey;
 
 use solana_sdk::transaction::VersionedTransaction;
 use std::{env, fmt, str::FromStr};
+use std::sync::Arc;
 use tokio::time::sleep;
 use tokio::time::Duration;
 
@@ -16,7 +17,6 @@ use {
         instruction::Instruction,
         pubkey::{ParsePubkeyError, Pubkey},
         signature::Signer,
-        transaction::Transaction,
     },
     std::collections::HashMap,
 };
@@ -26,6 +26,7 @@ use serde_json::Value;
 use solana_sdk::pubkey;
 use solana_sdk::signer::keypair::Keypair;
 use spl_associated_token_account::instruction;
+use crate::chains::solana::solana_chain::{submit, JITO_TIP_AMOUNT};
 
 /// A `Result` alias where the `Err` case is `jup_ag::Error`.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -465,7 +466,7 @@ impl Memo {
 pub async fn jupiter_swap(
     _memo: &str,
     rpc_client: &RpcClient,
-    keypair: &Keypair,
+    keypair: Arc<Keypair>,
     swap_mode: SwapMode,
 ) -> core::result::Result<(), String> {
     // Parse the memo JSON
@@ -494,7 +495,7 @@ pub async fn jupiter_swap(
         .await
         .is_err()
     {
-        create_token_account(&memo.user_account, &memo.token_out, &keypair, &rpc_client)
+        create_token_account(&memo.user_account, &memo.token_out, keypair.clone(), &rpc_client)
             .await
             .map_err(|e| format!("Failed to create token account: {}", e))?;
     }
@@ -551,7 +552,7 @@ pub async fn jupiter_swap(
 pub async fn create_token_account(
     owner: &Pubkey,
     mint: &Pubkey,
-    fee_payer: &Keypair,
+    fee_payer: Arc<Keypair>,
     rpc_client: &RpcClient,
 ) -> Result<()> {
     let create_account_ix = instruction::create_associated_token_account(
@@ -561,18 +562,8 @@ pub async fn create_token_account(
         &pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
     );
 
-    let mut transaction =
-        Transaction::new_with_payer(&[create_account_ix], Some(&fee_payer.pubkey()));
-
-    let recent_blockhash: Hash = rpc_client.get_latest_blockhash().await.unwrap();
-    transaction.sign(&[fee_payer], recent_blockhash);
-
-    rpc_client.simulate_transaction(&transaction).await.unwrap();
-
-    rpc_client
-        .send_and_confirm_transaction(&transaction)
-        .await
-        .unwrap();
-
+    submit(&rpc_client, fee_payer, vec![create_account_ix], JITO_TIP_AMOUNT).await.map_err(|e| {
+        Error::JupiterApi(format!("Failed to create token account: {}", e))
+    })?;
     Ok(())
 }

@@ -3,7 +3,7 @@ mod routers;
 
 use crate::chains::ethereum::ethereum_chain::handle_ethereum_execution;
 use crate::chains::mantis::mantis_chain::handle_mantis_execution;
-use crate::chains::solana::solana_chain::handle_solana_execution;
+use crate::chains::solana::solana_chain::{handle_solana_execution, SUBMIT_THROUGH_JITO};
 use crate::chains::OperationInput;
 use crate::chains::OperationOutput;
 use crate::chains::PostIntentInfo;
@@ -25,6 +25,8 @@ use tokio_tungstenite::tungstenite::protocol::Message;
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
+    let is_jito_enabled = env::var("JITO").map(|x| x == "true").unwrap_or(false);
+    SUBMIT_THROUGH_JITO.store(is_jito_enabled, std::sync::atomic::Ordering::SeqCst);
     let server_addr = env::var("COMPOSABLE_ENDPOINT").unwrap_or_else(|_| String::from(""));
 
     let (ws_stream, _) = connect_async(server_addr).await.expect("Failed to connect");

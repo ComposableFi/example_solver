@@ -22,9 +22,12 @@ pub mod solana_chain {
     use std::env;
     use std::str::FromStr;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread::sleep;
     use std::time::Duration;
+    use anyhow::anyhow;
     use solana_client::rpc_config::RpcSendTransactionConfig;
+    use strum_macros::{Display, IntoStaticStr};
     use {
         solana_client::nonblocking::rpc_client::RpcClient,
         solana_sdk::{instruction::Instruction, transaction::Transaction},
@@ -35,6 +38,15 @@ pub mod solana_chain {
     pub const JITO_TIP_AMOUNT: u64 = 40000;
     pub const JITO_BLOCK_ENGINE_URL: &str = "https://mainnet.block-engine.jito.wtf";
     pub const RETRIES: u8 = 5;
+    pub static SUBMIT_THROUGH_JITO: AtomicBool = AtomicBool::new(option_env!("JITO").is_some());
+
+    #[derive(Debug, Clone, Copy, Default, EnumString, Display, IntoStaticStr)]
+    #[strum(serialize_all = "snake_case")]
+    pub enum TxSendMethod {
+        #[default]
+        JITO,
+        RPC,
+    }
 
     // DUMMY MANTIS = 78grvu3nEsQsx3tdMB8BqedJF2hyJx1GPgjGQZWDrDTS
 
@@ -59,11 +71,11 @@ pub mod solana_chain {
         intent_id: &str,
         amount: &str,
     ) -> Result<(), String> {
-        let from_keypair = Keypair::from_base58_string(
+        let from_keypair = Arc::new(Keypair::from_base58_string(
             env::var("SOLANA_KEYPAIR")
                 .expect("SOLANA_KEYPAIR must be set")
                 .as_str(),
-        );
+        ));
         let rpc_url = env::var("SOLANA_RPC").expect("SOLANA_RPC must be set");
         let client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
 
@@ -114,45 +126,23 @@ pub mod solana_chain {
         };
 
         // solver -> token_out -> user | user -> token_in -> solver
-        let jito = env::var("JITO").unwrap_or_else(|_| String::from("false"));
-        if &jito == "true" {
-            if let Err(e) = solana_send_funds_to_user_jito(
-                intent_id,
-                &token_in,
-                &token_out,
-                &user_account,
-                solver_out.to_string(),
-                intent.src_chain == intent.dst_chain,
-                rpc_url,
-                Pubkey::from_str(&bridge_escrow::ID.to_string()).unwrap(),
-                amount.parse::<u64>().unwrap(),
-            )
-            .await
-            {
-                return Err(format!(
-                    "Error occurred on send token_out -> user & user sends token_in -> solver (Jito): {}",
-                    e
-                ));
-            }
-        } else {
-            if let Err(e) = solana_send_funds_to_user(
-                intent_id,
-                &token_in,
-                &token_out,
-                &user_account,
-                solver_out.to_string(),
-                intent.src_chain == intent.dst_chain,
-                rpc_url,
-                Pubkey::from_str(&bridge_escrow::ID.to_string()).unwrap(),
-                amount.parse::<u64>().unwrap(),
-            )
-            .await
-            {
-                return Err(format!(
-                    "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
-                    e
-                ));
-            }
+        if let Err(e) = solana_send_funds_to_user(
+            intent_id,
+            &token_in,
+            &token_out,
+            &user_account,
+            solver_out.to_string(),
+            intent.src_chain == intent.dst_chain,
+            rpc_url,
+            Pubkey::from_str(&bridge_escrow::ID.to_string()).unwrap(),
+            amount.parse::<u64>().unwrap(),
+        )
+        .await
+        {
+            return Err(format!(
+                "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
+                e
+            ));
         }
         // swap token_in -> USDT
         if intent.src_chain == intent.dst_chain
@@ -168,7 +158,7 @@ pub mod solana_chain {
             );
 
             sleep(Duration::from_secs(2));
-            if let Err(e) = jupiter_swap(&memo, &client, &from_keypair, SwapMode::ExactIn).await {
+            if let Err(e) = jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await {
                 return Err(format!("Error on Solana swap token_in -> USDT: {e}"));
             }
         } else {
@@ -218,7 +208,7 @@ pub mod solana_chain {
 
         let from_keypair_str =
             env::var("SOLANA_KEYPAIR").map_err(|_| "SOLANA_KEYPAIR must be set".to_string())?;
-        let from_keypair = Keypair::from_base58_string(&from_keypair_str);
+        let from_keypair = Arc::new(Keypair::from_base58_string(&from_keypair_str));
 
         let client = RpcClient::new_with_commitment(rpc_url, CommitmentConfig::confirmed());
 
@@ -239,7 +229,7 @@ pub mod solana_chain {
 
                 transfer_slp20(
                     &client,
-                    &from_keypair,
+                    from_keypair.clone(),
                     &Pubkey::from_str(&user_account)
                         .map_err(|e| format!("Invalid user_account pubkey: {}", e))?,
                     &Pubkey::from_str(&token_out)
@@ -264,7 +254,7 @@ pub mod solana_chain {
                     100
                 );
 
-                jupiter_swap(&memo, &client, &from_keypair, SwapMode::ExactOut)
+                jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactOut)
                     .await
                     .map_err(|err| format!("Swap failed: {}", err))?;
             }
@@ -278,7 +268,7 @@ pub mod solana_chain {
 
     async fn transfer_slp20(
         client: &RpcClient,
-        sender_keypair: &Keypair,
+        sender_keypair: Arc<Keypair>,
         recipient_wallet_pubkey: &Pubkey,
         token_mint_pubkey: &Pubkey,
         amount: u64,
@@ -306,7 +296,7 @@ pub mod solana_chain {
             create_token_account(
                 recipient_wallet_pubkey,
                 token_mint_pubkey,
-                sender_keypair,
+                sender_keypair.clone(),
                 client,
             )
             .await
@@ -327,7 +317,7 @@ pub mod solana_chain {
         let transaction = Transaction::new_signed_with_payer(
             &[transfer_instruction],
             Some(&sender_keypair.pubkey()),
-            &[sender_keypair],
+            &[&*sender_keypair],
             recent_blockhash,
         );
 
@@ -456,7 +446,7 @@ pub mod solana_chain {
                 if let Err(e) = create_token_account(
                     &solver_clone.pubkey(),
                     &Pubkey::from_str(&token_in_mint).unwrap(),
-                    &solver,
+                    solver.clone(),
                     &rpc_client,
                 )
                 .await
@@ -474,309 +464,7 @@ pub mod solana_chain {
             if let Err(e) = create_token_account(
                 &Pubkey::from_str(&user).unwrap(),
                 &Pubkey::from_str(&token_out_mint).unwrap(),
-                &solver,
-                &rpc_client,
-            )
-            .await
-            {
-                eprintln!("Failed to create token account: {}", e);
-            }
-        }
-
-        // Spawn a blocking task to execute the transaction
-        tokio::task::spawn_blocking(move || {
-            let client = anchor_client::Client::new_with_options(
-                Cluster::Custom(rpc_url.clone(), rpc_url),
-                solver_clone.clone(),
-                CommitmentConfig::processed(),
-            );
-
-            let program = client
-                .program(program_id)
-                .map_err(|e| format!("Failed to access bridge_escrow program: {}", e))?;
-
-            let user_token_out_addr = get_associated_token_address(
-                &Pubkey::from_str(&user).map_err(|e| format!("Invalid user pubkey: {}", e))?,
-                &Pubkey::from_str(&token_out_mint)
-                    .map_err(|e| format!("Invalid token_out_mint pubkey: {}", e))?,
-            );
-
-            let intent_state =
-                Pubkey::find_program_address(&[b"intent", intent_id.as_bytes()], &program_id).0;
-
-            let auctioneer_state = Pubkey::find_program_address(&[b"auctioneer"], &program_id).0;
-
-            let solver_token_out_addr = get_associated_token_address(
-                &solver_clone.pubkey(),
-                &Pubkey::from_str(&token_out_mint)
-                    .map_err(|e| format!("Invalid token_out_mint pubkey: {}", e))?,
-            );
-
-            let solana_ibc_id =
-                Pubkey::from_str("2HLLVco5HvwWriNbUhmVwA2pCetRkpgrqwnjcsZdyTKT").unwrap();
-
-            let (_storage, _bump_storage) = Pubkey::find_program_address(
-                &[solana_ibc::SOLANA_IBC_STORAGE_SEED],
-                &solana_ibc_id,
-            );
-
-            let (_trie, _bump_trie) =
-                Pubkey::find_program_address(&[solana_ibc::TRIE_SEED], &solana_ibc_id);
-
-            let (_chain, _bump_chain) =
-                Pubkey::find_program_address(&[solana_ibc::CHAIN_SEED], &solana_ibc_id);
-
-            let (_mint_authority, _bump_mint_authority) =
-                Pubkey::find_program_address(&[solana_ibc::MINT_ESCROW_SEED], &solana_ibc_id);
-
-            let _dummy_token_mint = Pubkey::find_program_address(&[b"dummy"], &program_id).0;
-
-            let _hashed_full_denom =
-                lib::hash::CryptoHash::digest(&_dummy_token_mint.to_string().as_bytes());
-
-            let (_escrow_account, _bump_escrow_account) = Pubkey::find_program_address(
-                &[solana_ibc::ESCROW, &_hashed_full_denom.as_slice()],
-                &solana_ibc_id,
-            );
-
-            let _receiver_token_account =
-                get_associated_token_address(&solver.pubkey(), &_dummy_token_mint);
-
-            let (_fee_collector, _bump_fee_collector) =
-                Pubkey::find_program_address(&[solana_ibc::FEE_SEED], &solana_ibc_id);
-
-            let storage;
-            let trie;
-            let chain;
-            let mint_authority;
-            let dummy_token_mint = Some(_dummy_token_mint);
-            let escrow_account;
-            let receiver_token_account;
-            let fee_collector;
-            let auctioneer =
-                Pubkey::from_str("5zCZ3jk8EZnJyG7fhDqD6tmqiYTLZjik5HUpGMnHrZfC").unwrap();
-
-            if !single_domain {
-                storage = Some(_storage);
-                trie = Some(_trie);
-                chain = Some(_chain);
-                mint_authority = Some(_mint_authority);
-                escrow_account = Some(_escrow_account);
-                receiver_token_account = Some(_receiver_token_account);
-                fee_collector = Some(_fee_collector);
-
-                loop {
-                    let result = program
-                        .request()
-                        .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
-                        .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
-                        .accounts(bridge_escrow::accounts::SplTokenTransferCrossChain {
-                            auctioneer_state,
-                            solver: solver_clone.pubkey(),
-                            auctioneer: auctioneer,
-                            token_in: None,
-                            token_out: Pubkey::from_str(&token_out_mint).unwrap(),
-                            auctioneer_token_in_account: None,
-                            solver_token_in_account: None,
-                            solver_token_out_account: solver_token_out_addr,
-                            user_token_out_account: user_token_out_addr,
-                            token_program: anchor_spl::token::ID,
-                            associated_token_program: anchor_spl::associated_token::ID,
-                            system_program: anchor_lang::solana_program::system_program::ID,
-                            ibc_program: Some(solana_ibc::ID),
-                            receiver: Some(Pubkey::from_str(&user).unwrap()),
-                            storage: storage,
-                            trie: trie,
-                            chain: chain,
-                            mint_authority: mint_authority,
-                            token_mint: dummy_token_mint,
-                            escrow_account: escrow_account,
-                            receiver_token_account: receiver_token_account,
-                            fee_collector: fee_collector,
-                        })
-                        .args(bridge_escrow::instruction::SendFundsToUserCrossChain {
-                            intent_id: intent_id.clone(),
-                            amount_out: amount_out_cross_chain,
-                            solver_out: solver_out.clone(),
-                        })
-                        .payer(solver_clone.clone())
-                        .signer(&*solver_clone)
-                        .send_with_spinner_and_config(RpcSendTransactionConfig {
-                            skip_preflight: true,
-                            ..RpcSendTransactionConfig::default()
-                        });
-
-                    match &result {
-                        Ok(_) => break Ok(()), // Transaction succeeded, exit loop
-                        Err(e) if e.to_string().contains("unable to confirm transaction") => {
-                            eprintln!("Transaction failed: {}. Retrying...", e);
-                            let _ = sleep(Duration::from_secs(1));
-                        }
-                        Err(e) => {
-                            break Err(format!(
-                                "Transaction failed due to a non-retryable error: {}",
-                                e
-                            ))
-                        } // Break on other errors
-                    }
-                }
-            } else {
-                storage = Some(_storage);
-                trie = Some(_trie);
-                chain = Some(_chain);
-                mint_authority = Some(_mint_authority);
-                escrow_account = Some(_escrow_account);
-                receiver_token_account = Some(_receiver_token_account);
-                fee_collector = Some(_fee_collector);
-                let receiver = Some(
-                    Pubkey::from_str(&user).map_err(|e| format!("Invalid user pubkey: {}", e))?,
-                );
-                let token_in_escrow_addr = get_associated_token_address(
-                    &auctioneer_state,
-                    &Pubkey::from_str(&token_in_mint).unwrap(),
-                );
-                let solver_token_in_addr = get_associated_token_address(
-                    &solver_clone.pubkey(),
-                    &Pubkey::from_str(&token_in_mint)
-                        .map_err(|e| format!("Invalid token_out_mint pubkey: {}", e))?,
-                );
-                let auctioneer_token_in_account = Some(token_in_escrow_addr);
-                let solver_token_in_account = Some(solver_token_in_addr);
-
-                use solana_program::pubkey::Pubkey;
-                use std::time::Duration;
-                use tokio::time::sleep;
-
-                loop {
-                    let result = program
-                        .request()
-                        .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
-                        .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
-                        .accounts(bridge_escrow::accounts::SplTokenTransfer {
-                            intent: Some(intent_state),
-                            intent_owner: receiver.unwrap(),
-                            auctioneer_state,
-                            solver: solver_clone.pubkey(),
-                            auctioneer: Pubkey::from_str(
-                                "5zCZ3jk8EZnJyG7fhDqD6tmqiYTLZjik5HUpGMnHrZfC",
-                            )
-                            .map_err(|e| format!("Invalid auctioneer pubkey: {}", e))?,
-                            token_in: Some(Pubkey::from_str(&token_in_mint).unwrap()),
-                            token_out: Pubkey::from_str(&token_out_mint)
-                                .map_err(|e| format!("Invalid token_out_mint pubkey: {}", e))?,
-                            auctioneer_token_in_account: auctioneer_token_in_account,
-                            solver_token_in_account: solver_token_in_account,
-                            solver_token_out_account: solver_token_out_addr,
-                            user_token_out_account: user_token_out_addr,
-                            token_program: anchor_spl::token::ID,
-                            associated_token_program: anchor_spl::associated_token::ID,
-                            system_program: anchor_lang::solana_program::system_program::ID,
-                            ibc_program: Some(solana_ibc::ID),
-                            receiver: receiver,
-                            storage: storage,
-                            trie: trie,
-                            chain: chain,
-                            mint_authority: mint_authority,
-                            token_mint: dummy_token_mint,
-                            escrow_account: escrow_account,
-                            receiver_token_account: receiver_token_account,
-                            fee_collector: fee_collector,
-                        })
-                        .args(bridge_escrow::instruction::SendFundsToUser {
-                            intent_id: intent_id.to_string(),
-                        })
-                        .payer(solver_clone.clone())
-                        .signer(&*solver_clone)
-                        .send_with_spinner_and_config(RpcSendTransactionConfig {
-                            skip_preflight: true,
-                            ..Default::default()
-                        });
-
-                    match &result {
-                        Ok(_) => break Ok(()), // Transaction succeeded, exit loop
-                        Err(e) if e.to_string().contains("unable to confirm transaction") => {
-                            eprintln!("Transaction failed: {}. Retrying...", e);
-                            let _ = sleep(Duration::from_secs(1));
-                        }
-                        Err(e) => {
-                            break Err(format!(
-                                "Transaction failed due to a non-retryable error: {}",
-                                e
-                            ))
-                        } // Break on other errors
-                    }
-                }
-            }
-        })
-        .await
-        .map_err(|e| format!("Task failed: {:?}", e))?
-    }
-
-    pub async fn solana_send_funds_to_user_jito(
-        intent_id: &str,
-        token_in_mint: &str,
-        token_out_mint: &str,
-        user: &str,
-        solver_out: String,
-        single_domain: bool,
-        rpc_url: String,
-        program_id: Pubkey,
-        amount_out_cross_chain: u64,
-    ) -> Result<(), String> {
-        // Load the keypair from environment variable
-        let solana_keypair = env::var("SOLANA_KEYPAIR")
-            .map_err(|e| format!("Failed to read SOLANA_KEYPAIR from environment: {}", e))?;
-
-        let solver = Arc::new(Keypair::from_base58_string(&solana_keypair));
-
-        // Clone the necessary variables for the task
-        let solver_clone = Arc::clone(&solver);
-        let intent_id = intent_id.to_string();
-        let token_in_mint = token_in_mint.to_string();
-        let token_out_mint = token_out_mint.to_string();
-        let user = user.to_string();
-
-        let rpc_client =
-            RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
-
-        let solver_token_out_addr = get_associated_token_address(
-            &Pubkey::from_str(&user).unwrap(), // careful with cross-chain
-            &Pubkey::from_str(&token_out_mint).unwrap(),
-        );
-
-        if single_domain {
-            let solver_token_in_addr = get_associated_token_address(
-                &solver_clone.pubkey(),
-                &Pubkey::from_str(&token_in_mint).unwrap(),
-            );
-
-            if rpc_client
-                .get_token_account_balance(&solver_token_in_addr)
-                .await
-                .is_err()
-            {
-                if let Err(e) = create_token_account(
-                    &solver_clone.pubkey(),
-                    &Pubkey::from_str(&token_in_mint).unwrap(),
-                    &solver,
-                    &rpc_client,
-                )
-                .await
-                {
-                    eprintln!("Failed to create token account: {}", e);
-                }
-            }
-        }
-
-        if rpc_client
-            .get_token_account_balance(&solver_token_out_addr)
-            .await
-            .is_err()
-        {
-            if let Err(e) = create_token_account(
-                &Pubkey::from_str(&user).unwrap(),
-                &Pubkey::from_str(&token_out_mint).unwrap(),
-                &solver,
+                solver.clone(),
                 &rpc_client,
             )
             .await
@@ -972,9 +660,63 @@ pub mod solana_chain {
         // Submit transaction asynchronously
         let rpc_url = env::var("SOLANA_RPC").expect("SOLANA_RPC must be set");
         let client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
-        match submit_through_jito(&client, solver_clone, instructions, JITO_TIP_AMOUNT).await {
+        match submit(&client, solver_clone, instructions, JITO_TIP_AMOUNT).await {
             Ok(_) => Ok(()),                                     // Transaction succeeded
             Err(_) => Ok(()), // Return error if transaction fails
+        }
+    }
+
+    pub async fn submit(
+        rpc_client: &RpcClient,
+        fee_payer: Arc<Keypair>,
+        instructions: Vec<Instruction>,
+        jito_tip: u64,
+    ) -> Result<Signature, String> {
+        let tx_send_method: TxSendMethod = match SUBMIT_THROUGH_JITO.load(Ordering::Relaxed) {
+            true => TxSendMethod::JITO,
+            false => TxSendMethod::RPC,
+        };
+        match tx_send_method {
+            TxSendMethod::JITO => submit_through_jito(rpc_client, fee_payer, instructions, jito_tip).await,
+            TxSendMethod::RPC => submit_default(rpc_client, fee_payer, instructions).await,
+        }.map_err(|e| e.to_string())
+    }
+
+    pub async fn submit_default(
+        rpc_client: &RpcClient,
+        fee_payer: Arc<Keypair>,
+        instructions: Vec<Instruction>,
+    ) -> anyhow::Result<Signature> {
+        let recent_blockhash = rpc_client
+            .get_latest_blockhash()
+            .await
+            .map_err(|e| anyhow!("Failed to fetch blockhash: {}", e))?;
+        let mut transaction = Transaction::new_with_payer(&instructions, Some(&fee_payer.pubkey()));
+        transaction.sign(&[&*fee_payer], recent_blockhash);
+
+        let mut current_try = 0;
+        loop {
+            current_try += 1;
+            let sig = rpc_client.send_and_confirm_transaction_with_spinner_and_config(&transaction, rpc_client.commitment(), RpcSendTransactionConfig {
+                skip_preflight: false,
+                ..Default::default()
+            }).await;
+            match sig {
+                Ok(sig) => return Ok(sig), // Transaction succeeded, exit loop
+                Err(err) if err.to_string().contains("unable to confirm transaction") => {
+                    eprintln!("Transaction failed: {}. Retrying...", err);
+                    if current_try == RETRIES {
+                        return Err(anyhow!("Failed to send transaction: {}", err));
+                    }
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+                Err(err) => {
+                    return Err(anyhow!(
+                    "Transaction failed due to a non-retryable error: {}",
+                    err
+                ))
+                } // Break on other errors
+            }
         }
     }
 
@@ -983,7 +725,7 @@ pub mod solana_chain {
         fee_payer: Arc<Keypair>,
         instructions: Vec<Instruction>,
         jito_tip: u64
-    ) -> Result<Signature, String> {
+    ) -> anyhow::Result<Signature> {
         let ix = anchor_lang::solana_program::system_instruction::transfer(
             &fee_payer.pubkey(),
             &JITO_ADDRESS,
@@ -1002,15 +744,13 @@ pub mod solana_chain {
             let mut cloned_tx = tx.clone();
             let mut client =
                 jito_searcher_client::get_searcher_client(&JITO_BLOCK_ENGINE_URL, &fee_payer)
-                    .await
-                    .expect("connects to searcher client");
+                    .await?;
             let mut bundle_results_subscription = client
                 .subscribe_bundle_results(SubscribeBundleResultsRequest {})
-                .await
-                .expect("subscribe to bundle results")
+                .await?
                 .into_inner();
 
-            let blockhash = rpc_client.get_latest_blockhash().await.unwrap();
+            let blockhash = rpc_client.get_latest_blockhash().await?;
             cloned_tx.sign(&[&*fee_payer], blockhash);
 
             let signatures = jito_searcher_client::send_bundle_with_confirmation(
@@ -1027,26 +767,17 @@ pub mod solana_chain {
 
             if let Ok(sigs) = signatures {
                 signature = *sigs.first().unwrap();
-                break;
+                return Ok(signature);
             } else {
                 current_try += 1;
                 continue;
             }
         }
         if current_try == RETRIES {
-            // println!("Failed to send transaction with the tries, Sending it through RPC Now");
-            let mut current_try = 0;
-            while current_try < 100 {
-                sleep(Duration::from_secs(1));
-                let sig = rpc_client.send_and_confirm_transaction_with_spinner(&tx).await;
-                if let Ok(sig) = sig {
-                    return Ok(sig);
-                }
-                current_try += 1;
-            }
-            return Err("Failed to send transaction through RPC".to_string());
+            println!("Failed to send transaction with the tries, Sending it through RPC Now");
+            submit_default(rpc_client, fee_payer, instructions).await
         } else {
-            return Ok(signature);
+            Ok(signature)
         }
     }
 }
