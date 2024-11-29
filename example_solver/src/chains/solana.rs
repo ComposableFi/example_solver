@@ -697,8 +697,10 @@ pub mod solana_chain {
         let mut current_try = 0;
         loop {
             current_try += 1;
-            let sig = rpc_client.send_and_confirm_transaction_with_spinner_and_config(&transaction, rpc_client.commitment(), RpcSendTransactionConfig {
+            let commitment_config = CommitmentConfig::processed();
+            let sig = rpc_client.send_and_confirm_transaction_with_spinner_and_config(&transaction, commitment_config, RpcSendTransactionConfig {
                 skip_preflight: false,
+                preflight_commitment: Some(commitment_config.commitment),
                 ..Default::default()
             }).await;
             match sig {
