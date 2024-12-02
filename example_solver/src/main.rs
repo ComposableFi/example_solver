@@ -19,6 +19,7 @@ use serde_json::json;
 use serde_json::Value;
 use spl_associated_token_account::get_associated_token_address;
 use std::env;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -81,47 +82,77 @@ async fn main() {
                     let intent_value: Value = serde_json::from_str(&intent_str).unwrap();
                     let intent_info: PostIntentInfo = serde_json::from_value(intent_value).unwrap();
 
-                    // calculate best quote
-                    let final_amount = get_simulate_swap_intent(
-                        &intent_info,
-                        &intent_info.src_chain,
-                        &intent_info.dst_chain,
-                        &String::from("USDT"),
-                    )
-                    .await;
+                    if let OperationInput::SwapTransfer(swap_input) = &intent_info.inputs {
+                        let timeout = swap_input.timeout.parse::<u64>().unwrap();
+                        let current_time = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .expect("Time went backwards")
+                            .as_secs();
 
-                    // decide if participate or not
-                    let mut amount_out_min = U256::zero();
-                    if let OperationOutput::SwapTransfer(transfer_output) = &intent_info.outputs {
-                        amount_out_min = U256::from_dec_str(&transfer_output.amount_out).unwrap();
-                    }
-
-                    let final_amount = U256::from_dec_str(&final_amount).unwrap();
-
-                    println!("User wants {amount_out_min} token_out, you can provide {final_amount} token_out (after FLAT_FEES + COMISSION)");
-
-                    if final_amount > amount_out_min {
-                        let mut json_data = json!({
-                            "code": 2,
-                            "msg": {
-                                "intent_id": intent_id,
-                                "solver_id": SOLVER_ID.to_string(),
-                                "amount": final_amount.to_string()
+                        let ok = if current_time >= timeout {
+                            println!(
+                                "current_time >= intent.timestamp: impossible to solve {intent_id}"
+                            );
+                            false
+                        } else {
+                            if intent_info.src_chain != intent_info.dst_chain && timeout - current_time < 1800 {
+                                println!("timeout - current_time < 30mins on cross-chain: not willing to solve {intent_id}");
+                                false
+                            } else {
+                                true
                             }
-                        });
+                        };
 
-                        create_keccak256_signature(&mut json_data, SOLVER_PRIVATE_KEY.to_string())
-                            .await
-                            .unwrap();
+                        // calculate best quote
+                        if ok {
+                            let final_amount = get_simulate_swap_intent(
+                                &intent_info,
+                                &intent_info.src_chain,
+                                &intent_info.dst_chain,
+                                &String::from("USDT"),
+                            )
+                            .await;
 
-                        ws_sender
-                            .send(Message::text(json_data.to_string()))
-                            .await
-                            .expect("Failed to send message");
+                            // decide if participate or not
+                            let mut amount_out_min = U256::zero();
+                            if let OperationOutput::SwapTransfer(transfer_output) =
+                                &intent_info.outputs
+                            {
+                                amount_out_min =
+                                    U256::from_dec_str(&transfer_output.amount_out).unwrap();
+                            }
 
-                        let mut intents = INTENTS.write().await;
-                        intents.insert(intent_id.to_string(), intent_info);
-                        drop(intents);
+                            let final_amount = U256::from_dec_str(&final_amount).unwrap();
+
+                            println!("User wants {amount_out_min} token_out, you can provide {final_amount} token_out (after FLAT_FEES + COMISSION)");
+
+                            if final_amount > amount_out_min {
+                                let mut json_data = json!({
+                                    "code": 2,
+                                    "msg": {
+                                        "intent_id": intent_id,
+                                        "solver_id": SOLVER_ID.to_string(),
+                                        "amount": final_amount.to_string()
+                                    }
+                                });
+
+                                create_keccak256_signature(
+                                    &mut json_data,
+                                    SOLVER_PRIVATE_KEY.to_string(),
+                                )
+                                .await
+                                .unwrap();
+
+                                ws_sender
+                                    .send(Message::text(json_data.to_string()))
+                                    .await
+                                    .expect("Failed to send message");
+
+                                let mut intents = INTENTS.write().await;
+                                intents.insert(intent_id.to_string(), intent_info);
+                                drop(intents);
+                            }
+                        }
                     }
                 } else if code == 3 {
                     // solver registered
