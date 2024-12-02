@@ -8,10 +8,12 @@ pub mod solana_chain {
     use crate::routers::jupiter::SwapMode;
     use crate::PostIntentInfo;
     use anchor_client::Cluster;
+    use anyhow::anyhow;
     use jito_protos::searcher::SubscribeBundleResultsRequest;
     use num_bigint::BigInt;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use solana_client::rpc_config::RpcSendTransactionConfig;
     use solana_sdk::commitment_config::CommitmentConfig;
     use solana_sdk::compute_budget::ComputeBudgetInstruction;
     use solana_sdk::pubkey::Pubkey;
@@ -21,12 +23,10 @@ pub mod solana_chain {
     use spl_token::instruction::transfer;
     use std::env;
     use std::str::FromStr;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::thread::sleep;
     use std::time::Duration;
-    use anyhow::anyhow;
-    use solana_client::rpc_config::RpcSendTransactionConfig;
     use strum_macros::{Display, IntoStaticStr};
     use {
         solana_client::nonblocking::rpc_client::RpcClient,
@@ -108,13 +108,25 @@ pub mod solana_chain {
         }
 
         // swap USDT -> token_out
-        if !token_out.eq_ignore_ascii_case(usdt_contract_address) {
+        let token_out_account = get_associated_token_address(
+            &from_keypair.pubkey(),
+            &Pubkey::from_str(&token_out).unwrap(),
+        );
+        let balance = client
+            .get_token_account_balance(&token_out_account)
+            .await
+            .map_err(|e| format!("Failed to get token account balance: {}", e))?
+            .amount;
+        let mut do_swap = false;
+
+        if balance.parse::<u64>().unwrap() < amount.parse::<u64>().unwrap() && !token_out.eq_ignore_ascii_case(usdt_contract_address) {
             if let Err(e) = solana_transfer_swap(intent.clone(), amount).await {
                 return Err(format!(
                     "Error occurred on Solana swap USDT -> token_out (manual swap required): {}",
                     e
                 ));
             }
+            do_swap = true;
         }
 
         let solver_out = if intent.src_chain == "ethereum" {
@@ -145,7 +157,7 @@ pub mod solana_chain {
             ));
         }
         // swap token_in -> USDT
-        if intent.src_chain == intent.dst_chain
+        if do_swap && intent.src_chain == intent.dst_chain
             && !token_in.eq_ignore_ascii_case(usdt_contract_address)
         {
             let memo = format!(
@@ -158,7 +170,9 @@ pub mod solana_chain {
             );
 
             sleep(Duration::from_secs(2));
-            if let Err(e) = jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await {
+            if let Err(e) =
+                jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await
+            {
                 return Err(format!("Error on Solana swap token_in -> USDT: {e}"));
             }
         } else {
@@ -661,7 +675,7 @@ pub mod solana_chain {
         let rpc_url = env::var("SOLANA_RPC").expect("SOLANA_RPC must be set");
         let client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
         match submit(&client, solver_clone, instructions, JITO_TIP_AMOUNT).await {
-            Ok(_) => Ok(()),                                     // Transaction succeeded
+            Ok(_) => Ok(()),  // Transaction succeeded
             Err(_) => Ok(()), // Return error if transaction fails
         }
     }
@@ -677,9 +691,12 @@ pub mod solana_chain {
             false => TxSendMethod::RPC,
         };
         match tx_send_method {
-            TxSendMethod::JITO => submit_through_jito(rpc_client, fee_payer, instructions, jito_tip).await,
+            TxSendMethod::JITO => {
+                submit_through_jito(rpc_client, fee_payer, instructions, jito_tip).await
+            }
             TxSendMethod::RPC => submit_default(rpc_client, fee_payer, instructions).await,
-        }.map_err(|e| e.to_string())
+        }
+        .map_err(|e| e.to_string())
     }
 
     pub async fn submit_default(
@@ -695,12 +712,23 @@ pub mod solana_chain {
                 .get_latest_blockhash()
                 .await
                 .map_err(|e| anyhow!("Failed to fetch blockhash: {}", e))?;
-            let transaction = Transaction::new_signed_with_payer(&instructions, Some(&fee_payer.pubkey()), &[&*fee_payer], recent_blockhash);
+            let transaction = Transaction::new_signed_with_payer(
+                &instructions,
+                Some(&fee_payer.pubkey()),
+                &[&*fee_payer],
+                recent_blockhash,
+            );
 
-            let sig = rpc_client.send_and_confirm_transaction_with_spinner_and_config(&transaction, rpc_client.commitment(), RpcSendTransactionConfig {
-                skip_preflight: true,
-                ..Default::default()
-            }).await;
+            let sig = rpc_client
+                .send_and_confirm_transaction_with_spinner_and_config(
+                    &transaction,
+                    rpc_client.commitment(),
+                    RpcSendTransactionConfig {
+                        skip_preflight: true,
+                        ..Default::default()
+                    },
+                )
+                .await;
 
             match sig {
                 Ok(sig) => return Ok(sig), // Transaction succeeded, exit loop
@@ -713,9 +741,9 @@ pub mod solana_chain {
                 }
                 Err(err) => {
                     return Err(anyhow!(
-                    "Transaction failed due to a non-retryable error: {}",
-                    err
-                ))
+                        "Transaction failed due to a non-retryable error: {}",
+                        err
+                    ))
                 } // Break on other errors
             }
         }
@@ -725,7 +753,7 @@ pub mod solana_chain {
         rpc_client: &RpcClient,
         fee_payer: Arc<Keypair>,
         instructions: Vec<Instruction>,
-        jito_tip: u64
+        jito_tip: u64,
     ) -> anyhow::Result<Signature> {
         let ix = anchor_lang::solana_program::system_instruction::transfer(
             &fee_payer.pubkey(),

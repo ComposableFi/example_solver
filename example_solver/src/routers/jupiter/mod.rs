@@ -4,8 +4,8 @@ pub mod field_prioritization_fee;
 pub mod field_pubkey;
 
 use solana_sdk::transaction::VersionedTransaction;
-use std::{env, fmt, str::FromStr};
 use std::sync::Arc;
+use std::{env, fmt, str::FromStr};
 use tokio::time::sleep;
 use tokio::time::Duration;
 
@@ -21,12 +21,12 @@ use {
     std::collections::HashMap,
 };
 
+use crate::chains::solana::solana_chain::{submit, JITO_TIP_AMOUNT};
 use crate::get_associated_token_address;
 use serde_json::Value;
 use solana_sdk::pubkey;
 use solana_sdk::signer::keypair::Keypair;
 use spl_associated_token_account::instruction;
-use crate::chains::solana::solana_chain::{submit, JITO_TIP_AMOUNT};
 
 /// A `Result` alias where the `Err` case is `jup_ag::Error`.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -495,9 +495,14 @@ pub async fn jupiter_swap(
         .await
         .is_err()
     {
-        create_token_account(&memo.user_account, &memo.token_out, keypair.clone(), &rpc_client)
-            .await
-            .map_err(|e| format!("Failed to create token account: {}", e))?;
+        create_token_account(
+            &memo.user_account,
+            &memo.token_out,
+            keypair.clone(),
+            &rpc_client,
+        )
+        .await
+        .map_err(|e| format!("Failed to create token account: {}", e))?;
     }
 
     let request = SwapRequest::new(keypair.pubkey(), quotes.clone(), user_token_out);
@@ -538,11 +543,11 @@ pub async fn jupiter_swap(
             Err(err) if err.to_string().contains("unable to confirm transaction") => {
                 eprintln!("Transaction failed on jupiter: {}. Retrying...", err);
                 sleep(Duration::from_secs(1)).await; // Adjust delay as needed
-            },
+            }
             Err(err) => {
                 eprintln!("Transaction failed on jupiter: {}", err);
-                break
-            }, // Break on other errors
+                break;
+            } // Break on other errors
         }
     }
 
@@ -562,8 +567,13 @@ pub async fn create_token_account(
         &pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
     );
 
-    submit(&rpc_client, fee_payer, vec![create_account_ix], JITO_TIP_AMOUNT).await.map_err(|e| {
-        Error::JupiterApi(format!("Failed to create token account: {}", e))
-    })?;
+    submit(
+        &rpc_client,
+        fee_payer,
+        vec![create_account_ix],
+        JITO_TIP_AMOUNT,
+    )
+    .await
+    .map_err(|e| Error::JupiterApi(format!("Failed to create token account: {}", e)))?;
     Ok(())
 }

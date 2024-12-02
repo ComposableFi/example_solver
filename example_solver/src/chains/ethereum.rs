@@ -65,7 +65,15 @@ pub mod ethereum_chain {
             "name": "approve",
             "outputs": [{ "name": "", "type": "bool" }],
             "type": "function"
-        }]"#
+        },{
+            "constant":true,
+            "inputs":[
+                {"name":"account","type":"address"}
+            ],
+            "name":"balanceOf",
+            "outputs":[{"name":"","type":"uint256"}],
+            "type":"function"}
+        ]"#
     );
 
     abigen!(
@@ -150,7 +158,15 @@ pub mod ethereum_chain {
         }
 
         // swap USDT -> token_out
-        if !token_out.eq_ignore_ascii_case(usdt_contract_address) {
+        let contract = ERC20::new(Address::from_str(&token_out).unwrap(), provider.clone());
+        let balance: U256 = contract
+            .balance_of(target_address)
+            .call()
+            .await
+            .map_err(|e| format!("Failed to fetch balance: {}", e))?;
+        let mut do_swap = false;
+
+        if balance < U256::from_dec_str(&amount).unwrap() && !token_out.eq_ignore_ascii_case(usdt_contract_address) {
             if let Err(e) =
                 ethereum_trasnfer_swap(&intent_id.to_string(), intent.clone(), amount).await
             {
@@ -172,6 +188,8 @@ pub mod ethereum_chain {
                 println!("Error approving {token_out} for solver: {e}");
                 return Err(e.to_string());
             }
+
+            do_swap = true;
         }
 
         let solver_out = if intent.src_chain == "ethereum" {
@@ -207,7 +225,7 @@ pub mod ethereum_chain {
             println!("Error occurred on Ethereum send token_out -> user & user sends token_in -> solver (solver must approve USDT to Escrow SC first): {}", e);
             return Err(e.to_string());
         // swap token_in -> USDT
-        } else if intent.src_chain == intent.dst_chain
+        } else if do_swap && intent.src_chain == intent.dst_chain
             && !token_in.eq_ignore_ascii_case(usdt_contract_address)
         {
             if let Err(e) =

@@ -95,7 +95,9 @@ async fn main() {
                             );
                             false
                         } else {
-                            if intent_info.src_chain != intent_info.dst_chain && timeout - current_time < 1800 {
+                            if intent_info.src_chain != intent_info.dst_chain
+                                && timeout - current_time < 1800
+                            {
                                 println!("timeout - current_time < 30mins on cross-chain: not willing to solve {intent_id}");
                                 false
                             } else {
