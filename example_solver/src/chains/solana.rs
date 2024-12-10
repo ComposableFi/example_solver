@@ -35,7 +35,7 @@ pub mod solana_chain {
 
     pub const JITO_ADDRESS: Pubkey =
         solana_program::pubkey!("96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5");
-    pub const JITO_TIP_AMOUNT: u64 = 40000;
+    pub const JITO_TIP_AMOUNT: u64 = 1200000;
     pub const JITO_BLOCK_ENGINE_URL: &str = "https://mainnet.block-engine.jito.wtf";
     pub const RETRIES: u8 = 5;
     pub static SUBMIT_THROUGH_JITO: AtomicBool = AtomicBool::new(option_env!("JITO").is_some());
@@ -81,17 +81,17 @@ pub mod solana_chain {
 
         let usdt_contract_address = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
-        let usdt_token_account = get_associated_token_address(
-            &from_keypair.pubkey(),
-            &Pubkey::from_str(usdt_contract_address).unwrap(),
-        );
+        // let usdt_token_account = get_associated_token_address(
+        //     &from_keypair.pubkey(),
+        //     &Pubkey::from_str(usdt_contract_address).unwrap(),
+        // );
 
-        let balance_ant = client
-            .get_token_account_balance(&usdt_token_account)
-            .await
-            .map_err(|e| format!("Failed to get token account balance: {}", e))?
-            .ui_amount
-            .unwrap();
+        // let balance_ant = client
+        //     .get_token_account_balance(&usdt_token_account)
+        //     .await
+        //     .map_err(|e| format!("Failed to get token account balance: {}", e))?
+        //     .ui_amount
+        //     .unwrap();
 
         let mut user_account = String::default();
         let mut token_in = String::default();
@@ -112,20 +112,41 @@ pub mod solana_chain {
             &from_keypair.pubkey(),
             &Pubkey::from_str(&token_out).unwrap(),
         );
+
         let balance = client
             .get_token_account_balance(&token_out_account)
             .await
-            .map_err(|e| format!("Failed to get token account balance: {}", e))?
-            .amount;
+            .map(|result| result.amount)
+            .unwrap_or_else(|_| "0".to_string());
+
         let mut do_swap = false;
 
-        if balance.parse::<u64>().unwrap() < amount.parse::<u64>().unwrap() && !token_out.eq_ignore_ascii_case(usdt_contract_address) {
-            if let Err(e) = solana_transfer_swap(intent.clone(), amount).await {
-                return Err(format!(
-                    "Error occurred on Solana swap USDT -> token_out (manual swap required): {}",
-                    e
-                ));
+        if balance.parse::<u64>().unwrap() < amount.parse::<u64>().unwrap()
+            && !token_out.eq_ignore_ascii_case(usdt_contract_address)
+        {
+            let mut attempts = 0;
+            let max_attempts = 5;
+            
+            while attempts < max_attempts {
+                match solana_transfer_swap(intent.clone(), amount).await {
+                    Ok(_) => {
+                        // Successful execution, exit the loop
+                        break;
+                    }
+                    Err(e) => {
+                        attempts += 1;
+                        if attempts >= max_attempts {
+                            return Err(format!(
+                                "Error occurred on Solana swap USDT -> token_out (manual swap required) after {} attempts: {}",
+                                attempts, e
+                            ));
+                        }
+                        // Optional: Add a delay before retrying
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                }
             }
+            
             do_swap = true;
         }
 
@@ -157,7 +178,8 @@ pub mod solana_chain {
             ));
         }
         // swap token_in -> USDT
-        if do_swap && intent.src_chain == intent.dst_chain
+        if do_swap
+            && intent.src_chain == intent.dst_chain
             && !token_in.eq_ignore_ascii_case(usdt_contract_address)
         {
             let memo = format!(
@@ -170,49 +192,65 @@ pub mod solana_chain {
             );
 
             sleep(Duration::from_secs(2));
-            if let Err(e) =
-                jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await
-            {
-                return Err(format!("Error on Solana swap token_in -> USDT: {e}"));
+            let mut attempts = 0;
+            let max_attempts = 5;
+            
+            while attempts < max_attempts {
+                match jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await {
+                    Ok(_) => {
+                        // Successful execution, exit the loop
+                        break;
+                    }
+                    Err(e) => {
+                        attempts += 1;
+                        if attempts >= max_attempts {
+                            return Err(format!("Error on Solana swap token_in -> USDT after {} attempts: {e}", attempts));
+                        }
+                        // Optional: Add a delay before retrying
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                }
             }
+            
         } else {
             println!("You sent token_out to user for intent_id {intent_id}. You will receive token_in from user on src_chain");
         }
 
-        if intent.src_chain == intent.dst_chain {
-            let mut balance_post = client
-                .get_token_account_balance(&usdt_token_account)
-                .await
-                .unwrap()
-                .ui_amount
-                .unwrap();
+        // if intent.src_chain == intent.dst_chain {
+        //     let mut balance_post = client
+        //         .get_token_account_balance(&usdt_token_account)
+        //         .await
+        //         .unwrap()
+        //         .ui_amount
+        //         .unwrap();
 
-            let balance = if balance_post > balance_ant {
-                balance_post - balance_ant
-            } else if balance_post < balance_ant {
-                balance_ant - balance_post
-            } else {
-                std::thread::sleep(Duration::from_secs(5));
-                balance_post = client
-                    .get_token_account_balance(&usdt_token_account)
-                    .await
-                    .unwrap()
-                    .ui_amount
-                    .unwrap();
+        //     let balance = if balance_post > balance_ant {
+        //         balance_post - balance_ant
+        //     } else if balance_post < balance_ant {
+        //         balance_ant - balance_post
+        //     } else {
+        //         std::thread::sleep(Duration::from_secs(5));
+        //         balance_post = client
+        //             .get_token_account_balance(&usdt_token_account)
+        //             .await
+        //             .unwrap()
+        //             .ui_amount
+        //             .unwrap();
 
-                balance_post - balance_ant
-            };
+        //         balance_post - balance_ant
+        //     };
 
-            println!(
-                "You have {} {} USDT on intent {intent_id}",
-                if balance_post >= balance_ant {
-                    "won"
-                } else {
-                    "lost"
-                },
-                balance
-            );
-        }
+        //     println!(
+        //         "You have {} {} USDT on intent {intent_id}",
+        //         if balance_post >= balance_ant {
+        //             "won"
+        //         } else {
+        //             "lost"
+        //         },
+        //         balance
+        //     );
+        // }
+        println!("intent {intent_id} solved");
 
         Ok(())
     }
@@ -675,7 +713,10 @@ pub mod solana_chain {
         let rpc_url = env::var("SOLANA_RPC").expect("SOLANA_RPC must be set");
         let client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
         match submit(&client, solver_clone, instructions, JITO_TIP_AMOUNT).await {
-            Ok(_) => Ok(()),  // Transaction succeeded
+            Ok(tx_hash) => {
+                let _ = send_tx_hash_to_auctioner("http://34.78.217.187:8080", tx_hash).await;
+                Ok(())
+            },  // Transaction succeeded
             Err(_) => Ok(()), // Return error if transaction fails
         }
     }
@@ -808,5 +849,14 @@ pub mod solana_chain {
         } else {
             Ok(signature)
         }
+    }
+
+    async fn send_tx_hash_to_auctioner(auctioner_url: &str, tx_hash: Signature) -> anyhow::Result<()> {
+        let _ = reqwest::Client::new()
+            .post(&format!("{auctioner_url}/solana_tx_proof"))
+            .body(tx_hash.to_string())
+            .send()
+            .await?;
+        Ok(())
     }
 }
