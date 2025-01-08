@@ -960,7 +960,7 @@ dependencies = [
 [[package]]
 name = "bridge-escrow"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -1191,7 +1191,7 @@ dependencies = [
 [[package]]
 name = "cf-guest"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -2775,7 +2775,7 @@ dependencies = [
 [[package]]
 name = "guestchain"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "borsh 0.10.3",
  "bytemuck",
@@ -3884,7 +3884,7 @@ dependencies = [
 [[package]]
 name = "lib"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
@@ -4065,7 +4065,7 @@ dependencies = [
 [[package]]
 name = "memory"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "derive_more",
 ]
@@ -4951,7 +4951,7 @@ dependencies = [
 [[package]]
 name = "proto-utils"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "const_format",
  "derive_more",
@@ -5574,7 +5574,7 @@ dependencies = [
 [[package]]
 name = "sealable-trie"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "ascii 1.1.0",
  "base64 0.21.7",
@@ -5973,7 +5973,7 @@ dependencies = [
 [[package]]
 name = "solana-allocator"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "bytemuck",
  "solana-program",
@@ -6143,7 +6143,7 @@ dependencies = [
 [[package]]
 name = "solana-ibc"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "anchor-lang",
  "anchor-spl",
@@ -6582,7 +6582,7 @@ dependencies = [
 [[package]]
 name = "solana-signature-verifier"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "base64 0.21.7",
  "borsh 0.10.3",
@@ -6707,7 +6707,7 @@ dependencies = [
 [[package]]
 name = "solana-trie"
 version = "0.0.3"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "bytemuck",
  "lib 0.0.0 (git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade)",
@@ -7335,7 +7335,7 @@ source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=f
 [[package]]
 name = "stdx"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 
 [[package]]
 name = "string_cache"
@@ -8049,7 +8049,7 @@ dependencies = [
 [[package]]
 name = "trie-ids"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "ascii 1.1.0",
  "base64 0.21.7",
@@ -8313,7 +8313,7 @@ dependencies = [
 [[package]]
 name = "wasm"
 version = "0.0.0"
-source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#c3f1e68783a26bde8350035cc890295044426938"
+source = "git+https://github.com/ComposableFi/emulated-light-client.git?branch=upgrade#e80068c0343704b31978853360f73f868185c628"
 dependencies = [
  "const_format",
  "derive_more",

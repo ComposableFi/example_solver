@@ -35,9 +35,9 @@ pub mod solana_chain {
 
     pub const JITO_ADDRESS: Pubkey =
         solana_program::pubkey!("96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5");
-    pub const JITO_TIP_AMOUNT: u64 = 1200000;
+    pub const JITO_TIP_AMOUNT: u64 = 100_000;
     pub const JITO_BLOCK_ENGINE_URL: &str = "https://mainnet.block-engine.jito.wtf";
-    pub const RETRIES: u8 = 5;
+    pub const RETRIES: u8 = 1;
     pub static SUBMIT_THROUGH_JITO: AtomicBool = AtomicBool::new(option_env!("JITO").is_some());
 
     #[derive(Debug, Clone, Copy, Default, EnumString, Display, IntoStaticStr)]
@@ -96,15 +96,17 @@ pub mod solana_chain {
         let mut user_account = String::default();
         let mut token_in = String::default();
         let mut token_out = String::default();
-        let mut amount_in = String::default();
 
         if let OperationOutput::SwapTransfer(transfer_output) = &intent.outputs {
             user_account = transfer_output.dst_chain_user.clone();
             token_out = transfer_output.token_out.clone();
+
+            if token_out == "11111111111111111111111111111111" {
+                token_out = "So11111111111111111111111111111111111111112".to_string();
+            }
         }
         if let OperationInput::SwapTransfer(transfer_input) = &intent.inputs {
             token_in = transfer_input.token_in.clone();
-            amount_in = transfer_input.amount_in.clone();
         }
 
         // swap USDT -> token_out
@@ -119,14 +121,12 @@ pub mod solana_chain {
             .map(|result| result.amount)
             .unwrap_or_else(|_| "0".to_string());
 
-        let mut do_swap = false;
-
         if balance.parse::<u64>().unwrap() < amount.parse::<u64>().unwrap()
             && !token_out.eq_ignore_ascii_case(usdt_contract_address)
         {
             let mut attempts = 0;
-            let max_attempts = 5;
-            
+            let max_attempts = 3;
+
             while attempts < max_attempts {
                 match solana_transfer_swap(intent.clone(), amount).await {
                     Ok(_) => {
@@ -146,8 +146,6 @@ pub mod solana_chain {
                     }
                 }
             }
-            
-            do_swap = true;
         }
 
         let solver_out = if intent.src_chain == "ethereum" {
@@ -178,23 +176,33 @@ pub mod solana_chain {
             ));
         }
         // swap token_in -> USDT
-        if do_swap
-            && intent.src_chain == intent.dst_chain
+        if intent.src_chain == intent.dst_chain
             && !token_in.eq_ignore_ascii_case(usdt_contract_address)
         {
+            let token_in_account = get_associated_token_address(
+                &from_keypair.pubkey(),
+                &Pubkey::from_str(&token_in).unwrap(),
+            );
+
+            let amount_in = client
+                .get_token_account_balance(&token_in_account)
+                .await
+                .map(|result| result.amount)
+                .unwrap_or_else(|_| "0".to_string());
+
             let memo = format!(
                 r#"{{"user_account": "{}","token_in": "{}","token_out": "{}","amount": {},"slippage_bps": {}}}"#,
                 SOLVER_ADDRESSES.get(1).unwrap(),
                 token_in,
                 usdt_contract_address,
                 amount_in,
-                100
+                1000
             );
 
             sleep(Duration::from_secs(2));
             let mut attempts = 0;
-            let max_attempts = 5;
-            
+            let max_attempts = 2;
+
             while attempts < max_attempts {
                 match jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await {
                     Ok(_) => {
@@ -204,16 +212,18 @@ pub mod solana_chain {
                     Err(e) => {
                         attempts += 1;
                         if attempts >= max_attempts {
-                            return Err(format!("Error on Solana swap token_in -> USDT after {} attempts: {e}", attempts));
+                            return Err(format!(
+                                "Error on Solana swap token_in -> USDT after {} attempts: {e}",
+                                attempts
+                            ));
                         }
                         // Optional: Add a delay before retrying
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     }
                 }
             }
-            
         } else {
-            println!("You sent token_out to user for intent_id {intent_id}. You will receive token_in from user on src_chain");
+            // println!("You sent token_out to user for intent_id {intent_id}. You will receive token_in from user on src_chain");
         }
 
         // if intent.src_chain == intent.dst_chain {
@@ -303,7 +313,7 @@ pub mod solana_chain {
                     SOLVER_ADDRESSES.get(1).unwrap(),
                     token_out,
                     amount,
-                    100
+                    200
                 );
 
                 jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactOut)
@@ -421,9 +431,13 @@ pub mod solana_chain {
     pub async fn solana_simulate_swap(
         dst_chain_user: &str,
         token_in: &str,
-        token_out: &str,
+        mut token_out: &str,
         amount_in: u64,
     ) -> String {
+        if token_out == "11111111111111111111111111111111" {
+            token_out = "So11111111111111111111111111111111111111112";
+        }
+
         let memo_json = json!({
             "user_account": dst_chain_user,
             "token_in": token_in,
@@ -671,10 +685,10 @@ pub mod solana_chain {
                     .instruction(ComputeBudgetInstruction::set_compute_unit_limit(1_000_000))
                     .instruction(ComputeBudgetInstruction::request_heap_frame(128 * 1024))
                     .accounts(bridge_escrow::accounts::SplTokenTransfer {
+                        solver: solver_clone.pubkey(),
                         intent: Some(intent_state),
                         intent_owner: receiver.unwrap(),
                         auctioneer_state,
-                        solver: solver_clone.pubkey(),
                         auctioneer: Pubkey::from_str(
                             "5zCZ3jk8EZnJyG7fhDqD6tmqiYTLZjik5HUpGMnHrZfC",
                         )
@@ -716,7 +730,7 @@ pub mod solana_chain {
             Ok(tx_hash) => {
                 let _ = send_tx_hash_to_auctioner("http://34.78.217.187:8080", tx_hash).await;
                 Ok(())
-            },  // Transaction succeeded
+            } // Transaction succeeded
             Err(_) => Ok(()), // Return error if transaction fails
         }
     }
@@ -745,9 +759,9 @@ pub mod solana_chain {
         fee_payer: Arc<Keypair>,
         instructions: Vec<Instruction>,
     ) -> anyhow::Result<Signature> {
-        let mut current_try = 0;
+        // let mut current_try = 0;
         loop {
-            current_try += 1;
+            // current_try += 1;
 
             let recent_blockhash = rpc_client
                 .get_latest_blockhash()
@@ -774,11 +788,12 @@ pub mod solana_chain {
             match sig {
                 Ok(sig) => return Ok(sig), // Transaction succeeded, exit loop
                 Err(err) if err.to_string().contains("unable to confirm transaction") => {
-                    eprintln!("Transaction failed: {}. Retrying...", err);
-                    if current_try == RETRIES {
-                        return Err(anyhow!("Failed to send transaction: {}", err));
-                    }
-                    std::thread::sleep(Duration::from_secs(1));
+                    // eprintln!("Transaction failed: {}. Retrying...", err);
+                    return Err(anyhow!("Failed to send transaction: {}", err));
+                    // if current_try == RETRIES {
+                    //     return Err(anyhow!("Failed to send transaction: {}", err));
+                    // }
+                    // std::thread::sleep(Duration::from_secs(1));
                 }
                 Err(err) => {
                     return Err(anyhow!(
@@ -851,7 +866,10 @@ pub mod solana_chain {
         }
     }
 
-    async fn send_tx_hash_to_auctioner(auctioner_url: &str, tx_hash: Signature) -> anyhow::Result<()> {
+    async fn send_tx_hash_to_auctioner(
+        auctioner_url: &str,
+        tx_hash: Signature,
+    ) -> anyhow::Result<()> {
         let _ = reqwest::Client::new()
             .post(&format!("{auctioner_url}/solana_tx_proof"))
             .body(tx_hash.to_string())

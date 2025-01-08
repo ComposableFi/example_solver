@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::thread::sleep;
 use tokio::sync::RwLock;
 
 lazy_static! {
@@ -63,6 +64,11 @@ pub async fn get_simulate_swap_intent(
         OperationOutput::Lend(_) => todo!(),
         OperationOutput::Borrow(_) => todo!(),
     };
+
+    if token_out == "11111111111111111111111111111111" {
+        sleep(tokio::time::Duration::from_secs(2));
+        return String::from("0");
+    }
 
     if src_chain == "mantis" {
         let tokens = MANTIS_TOKENS.read().await;

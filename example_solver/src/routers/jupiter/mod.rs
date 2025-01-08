@@ -298,8 +298,8 @@ pub async fn quote(
 
 #[derive(Debug)]
 pub enum PrioritizationFeeLamports {
-    Auto,
     #[allow(dead_code)]
+    Auto,
     Exact {
         lamports: u64,
     },
@@ -340,7 +340,7 @@ impl SwapRequest {
             use_shared_accounts: Some(true),
             fee_account: None,
             compute_unit_price_micro_lamports: None,
-            prioritization_fee_lamports: PrioritizationFeeLamports::Auto,
+            prioritization_fee_lamports: PrioritizationFeeLamports::Exact { lamports: 200_000 },
             as_legacy_transaction: Some(false),
             use_token_ledger: Some(false),
             destination_token_account: Some(destination_account),
@@ -526,12 +526,6 @@ pub async fn jupiter_swap(
     // Sign the swap transaction
     let swap_transaction = VersionedTransaction::try_new(swap_transaction.message, &[&keypair])
         .map_err(|e| format!("Failed to create signed transaction: {}", e))?;
-
-    // Simulate the transaction before sending
-    rpc_client
-        .simulate_transaction(&swap_transaction)
-        .await
-        .map_err(|e| format!("Transaction simulation failed: {}", e))?;
 
     // Send and confirm the transaction
     loop {
