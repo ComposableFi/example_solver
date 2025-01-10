@@ -1,7 +1,6 @@
 pub mod solana_chain {
     use crate::chains::*;
-    use crate::routers::jupiter::create_token_account;
-    use crate::routers::jupiter::jupiter_swap;
+    use crate::routers::jupiter::jupiter_swap_instructions;
     use crate::routers::jupiter::quote;
     use crate::routers::jupiter::Memo as Jup_Memo;
     use crate::routers::jupiter::QuoteConfig;
@@ -20,6 +19,7 @@ pub mod solana_chain {
     use solana_sdk::signature::Signature;
     use solana_sdk::signature::{Keypair, Signer};
     use spl_associated_token_account::get_associated_token_address;
+    use spl_associated_token_account::instruction;
     use spl_token::instruction::transfer;
     use std::env;
     use std::str::FromStr;
@@ -109,6 +109,8 @@ pub mod solana_chain {
             token_in = transfer_input.token_in.clone();
         }
 
+        let mut tx_instructions: Vec<Instruction> = Vec::new();
+
         // swap USDT -> token_out
         let token_out_account = get_associated_token_address(
             &from_keypair.pubkey(),
@@ -129,7 +131,8 @@ pub mod solana_chain {
 
             while attempts < max_attempts {
                 match solana_transfer_swap(intent.clone(), amount).await {
-                    Ok(_) => {
+                    Ok(instructions) => {
+                        tx_instructions.extend(instructions);
                         // Successful execution, exit the loop
                         break;
                     }
@@ -157,7 +160,7 @@ pub mod solana_chain {
         };
 
         // solver -> token_out -> user | user -> token_in -> solver
-        if let Err(e) = solana_send_funds_to_user(
+        match solana_send_funds_to_user(
             intent_id,
             &token_in,
             &token_out,
@@ -170,11 +173,15 @@ pub mod solana_chain {
         )
         .await
         {
-            return Err(format!(
-                "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
-                e
-            ));
+            Err(e) => {
+                return Err(format!(
+                    "Error occurred on send token_out -> user & user sends token_in -> solver: {}",
+                    e
+                ));
+            }
+            Ok(instructions) => tx_instructions.extend(instructions),
         }
+
         // swap token_in -> USDT
         if intent.src_chain == intent.dst_chain
             && !token_in.eq_ignore_ascii_case(usdt_contract_address)
@@ -204,8 +211,16 @@ pub mod solana_chain {
             let max_attempts = 2;
 
             while attempts < max_attempts {
-                match jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactIn).await {
-                    Ok(_) => {
+                match jupiter_swap_instructions(
+                    &memo,
+                    &client,
+                    from_keypair.clone(),
+                    SwapMode::ExactIn,
+                )
+                .await
+                {
+                    Ok(instructions) => {
+                        tx_instructions.extend(instructions);
                         // Successful execution, exit the loop
                         break;
                     }
@@ -225,6 +240,15 @@ pub mod solana_chain {
         } else {
             // println!("You sent token_out to user for intent_id {intent_id}. You will receive token_in from user on src_chain");
         }
+
+        // Submit the combined transaction.
+        let result = match submit(&client, from_keypair, tx_instructions, JITO_TIP_AMOUNT).await {
+            Ok(tx_hash) => {
+                let _ = send_tx_hash_to_auctioner("http://34.78.217.187:8080", tx_hash).await;
+                Ok(())
+            } // Transaction succeeded
+            Err(_) => Ok(()), // Return error if transaction fails
+        };
 
         // if intent.src_chain == intent.dst_chain {
         //     let mut balance_post = client
@@ -262,10 +286,14 @@ pub mod solana_chain {
         // }
         println!("intent {intent_id} solved");
 
-        Ok(())
+        result
     }
 
-    pub async fn solana_transfer_swap(intent: PostIntentInfo, amount: &str) -> Result<(), String> {
+    pub async fn solana_transfer_swap(
+        intent: PostIntentInfo,
+        amount: &str,
+    ) -> Result<Vec<Instruction>, String> {
+        let mut instructions: Vec<Instruction> = Vec::new();
         let rpc_url = env::var("SOLANA_RPC").map_err(|_| "SOLANA_RPC must be set".to_string())?;
 
         let from_keypair_str =
@@ -289,17 +317,19 @@ pub mod solana_chain {
                         .map_err(|e| format!("Failed to parse amount_out: {}", e))?;
                 }
 
-                transfer_slp20(
-                    &client,
-                    from_keypair.clone(),
-                    &Pubkey::from_str(&user_account)
-                        .map_err(|e| format!("Invalid user_account pubkey: {}", e))?,
-                    &Pubkey::from_str(&token_out)
-                        .map_err(|e| format!("Invalid token_out pubkey: {}", e))?,
-                    parsed_amount,
-                )
-                .await
-                .map_err(|err| format!("Transaction failed: {}", err))?;
+                instructions.extend(
+                    transfer_spl20(
+                        &client,
+                        from_keypair.clone(),
+                        &Pubkey::from_str(&user_account)
+                            .map_err(|e| format!("Invalid user_account pubkey: {}", e))?,
+                        &Pubkey::from_str(&token_out)
+                            .map_err(|e| format!("Invalid token_out pubkey: {}", e))?,
+                        parsed_amount,
+                    )
+                    .await
+                    .map_err(|err| format!("Transaction failed: {}", err))?,
+                );
             }
             "swap" => {
                 let mut token_out = String::default();
@@ -316,25 +346,33 @@ pub mod solana_chain {
                     200
                 );
 
-                jupiter_swap(&memo, &client, from_keypair.clone(), SwapMode::ExactOut)
+                instructions.extend(
+                    jupiter_swap_instructions(
+                        &memo,
+                        &client,
+                        from_keypair.clone(),
+                        SwapMode::ExactOut,
+                    )
                     .await
-                    .map_err(|err| format!("Swap failed: {}", err))?;
+                    .map_err(|err| format!("Swap failed: {}", err))?,
+                );
             }
             _ => {
                 return Err("Function not supported".to_string());
             }
         };
 
-        Ok(())
+        Ok(instructions)
     }
 
-    async fn transfer_slp20(
+    async fn transfer_spl20(
         client: &RpcClient,
         sender_keypair: Arc<Keypair>,
         recipient_wallet_pubkey: &Pubkey,
         token_mint_pubkey: &Pubkey,
         amount: u64,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<Instruction>, Box<dyn std::error::Error>> {
+        let mut instructions: Vec<Instruction> = Vec::new();
         let sender_wallet_pubkey = &sender_keypair.pubkey();
         let sender_token_account_pubkey =
             get_associated_token_address(sender_wallet_pubkey, token_mint_pubkey);
@@ -355,14 +393,12 @@ pub mod solana_chain {
             .await
             .is_err()
         {
-            create_token_account(
+            instructions.push(instruction::create_associated_token_account(
+                &sender_keypair.pubkey(),
                 recipient_wallet_pubkey,
                 token_mint_pubkey,
-                sender_keypair.clone(),
-                client,
-            )
-            .await
-            .unwrap();
+                &spl_token::ID,
+            ));
         }
 
         let recent_blockhash = client.get_latest_blockhash().await.unwrap();
@@ -375,6 +411,7 @@ pub mod solana_chain {
             amount,
         )
         .unwrap();
+        instructions.push(transfer_instruction.clone());
 
         let transaction = Transaction::new_signed_with_payer(
             &[transfer_instruction],
@@ -392,11 +429,7 @@ pub mod solana_chain {
             return Err("Transaction simulation failed".into());
         }
 
-        let result = client
-            .send_and_confirm_transaction_with_spinner(&transaction)
-            .await?;
-
-        Ok(result.to_string())
+        Ok(instructions)
     }
 
     pub async fn _get_solana_token_decimals(
@@ -476,7 +509,8 @@ pub mod solana_chain {
         rpc_url: String,
         program_id: Pubkey,
         amount_out_cross_chain: u64,
-    ) -> Result<(), String> {
+    ) -> Result<Vec<Instruction>, String> {
+        let mut instructions: Vec<Instruction> = Vec::new();
         // Load the keypair from environment variable
         let solana_keypair = env::var("SOLANA_KEYPAIR")
             .map_err(|e| format!("Failed to read SOLANA_KEYPAIR from environment: {}", e))?;
@@ -509,16 +543,12 @@ pub mod solana_chain {
                 .await
                 .is_err()
             {
-                if let Err(e) = create_token_account(
+                instructions.push(instruction::create_associated_token_account(
+                    &solver.pubkey(),
                     &solver_clone.pubkey(),
                     &Pubkey::from_str(&token_in_mint).unwrap(),
-                    solver.clone(),
-                    &rpc_client,
-                )
-                .await
-                {
-                    eprintln!("Failed to create token account: {}", e);
-                }
+                    &spl_token::ID,
+                ));
             }
         }
 
@@ -527,20 +557,16 @@ pub mod solana_chain {
             .await
             .is_err()
         {
-            if let Err(e) = create_token_account(
+            instructions.push(instruction::create_associated_token_account(
+                &solver.pubkey(),
                 &Pubkey::from_str(&user).unwrap(),
                 &Pubkey::from_str(&token_out_mint).unwrap(),
-                solver.clone(),
-                &rpc_client,
-            )
-            .await
-            {
-                eprintln!("Failed to create token account: {}", e);
-            }
+                &spl_token::ID,
+            ));
         }
 
         // Spawn a blocking task to execute the transaction
-        let instructions = tokio::task::block_in_place(|| {
+        instructions.extend(tokio::task::block_in_place(|| {
             let client = anchor_client::Client::new_with_options(
                 Cluster::Custom(rpc_url.clone(), rpc_url),
                 solver_clone.clone(),
@@ -721,18 +747,8 @@ pub mod solana_chain {
                     .instructions()
                     .map_err(|e| format!("Failed to create instructions: {}", e))
             }
-        })?;
-
-        // Submit transaction asynchronously
-        let rpc_url = env::var("SOLANA_RPC").expect("SOLANA_RPC must be set");
-        let client = RpcClient::new_with_commitment(rpc_url.clone(), CommitmentConfig::confirmed());
-        match submit(&client, solver_clone, instructions, JITO_TIP_AMOUNT).await {
-            Ok(tx_hash) => {
-                let _ = send_tx_hash_to_auctioner("http://34.78.217.187:8080", tx_hash).await;
-                Ok(())
-            } // Transaction succeeded
-            Err(_) => Ok(()), // Return error if transaction fails
-        }
+        })?);
+        Ok(instructions)
     }
 
     pub async fn submit(

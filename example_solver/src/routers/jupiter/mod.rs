@@ -385,7 +385,7 @@ pub async fn swap(swap_request: SwapRequest) -> Result<Swap> {
 }
 
 /// Get swap serialized transaction instructions for a quote
-pub async fn _swap_instructions(swap_request: SwapRequest) -> Result<SwapInstructions> {
+pub async fn swap_instructions(swap_request: SwapRequest) -> Result<SwapInstructions> {
     let url = format!("{}/swap-instructions", quote_api_url());
 
     let response = reqwest::Client::builder()
@@ -463,7 +463,76 @@ impl Memo {
     }
 }
 
-pub async fn jupiter_swap(
+pub async fn jupiter_swap_instructions(
+    _memo: &str,
+    rpc_client: &RpcClient,
+    keypair: Arc<Keypair>,
+    swap_mode: SwapMode,
+) -> core::result::Result<Vec<Instruction>, String> {
+    let mut instructions: Vec<Instruction> = Vec::new();
+
+    // Parse the memo JSON
+    let memo = Memo::from_json(&_memo).map_err(|e| format!("Failed to parse memo: {}", e))?;
+
+    let only_direct_routes = false;
+    let quotes = quote(
+        memo.token_in,
+        memo.token_out,
+        memo.amount,
+        QuoteConfig {
+            only_direct_routes,
+            swap_mode: Some(swap_mode),
+            slippage_bps: Some(memo.slippage_bps),
+            ..QuoteConfig::default()
+        },
+    )
+    .await
+    .map_err(|e| format!("Failed to get quotes: {}", e))?;
+
+    let user_token_out = get_associated_token_address(&memo.user_account, &memo.token_out);
+
+    // Check if the user token account exists, and create it if necessary
+    if rpc_client
+        .get_token_account_balance(&user_token_out)
+        .await
+        .is_err()
+    {
+        instructions.push(instruction::create_associated_token_account(
+            &keypair.pubkey(),
+            &memo.user_account,
+            &memo.token_out,
+            &spl_token::ID,
+        ))
+    }
+
+    let request = SwapRequest::new(keypair.pubkey(), quotes.clone(), user_token_out);
+    let swap_instructions = swap_instructions(request)
+        .await
+        .map_err(|e| format!("Swap creation failed: {}", e))?;
+
+    // Add token ledger instruction if present
+    if let Some(token_ledger_instruction) = swap_instructions.token_ledger_instruction {
+        instructions.push(token_ledger_instruction);
+    }
+
+    // Add compute budget instructions
+    instructions.extend(swap_instructions.compute_budget_instructions);
+
+    // Add setup instructions
+    instructions.extend(swap_instructions.setup_instructions);
+
+    // Add the swap instruction
+    instructions.push(swap_instructions.swap_instruction);
+
+    // Add cleanup instruction if present
+    if let Some(cleanup_instruction) = swap_instructions.cleanup_instruction {
+        instructions.push(cleanup_instruction);
+    }
+
+    Ok(instructions)
+}
+
+pub async fn _jupiter_swap(
     _memo: &str,
     rpc_client: &RpcClient,
     keypair: Arc<Keypair>,
@@ -558,7 +627,7 @@ pub async fn create_token_account(
         &fee_payer.pubkey(),
         owner,
         mint,
-        &pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+        &spl_token::ID,
     );
 
     submit(
