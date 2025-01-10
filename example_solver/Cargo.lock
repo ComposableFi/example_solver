@@ -2415,6 +2415,7 @@ dependencies = [
  "solana-sdk",
  "spl-associated-token-account 3.0.4",
  "spl-token 3.5.0",
+ "spl-token-2022 0.9.0",
  "strum 0.26.2",
  "strum_macros 0.26.4",
  "thiserror",

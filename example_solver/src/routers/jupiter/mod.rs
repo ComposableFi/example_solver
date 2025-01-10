@@ -6,27 +6,22 @@ pub mod field_pubkey;
 use solana_sdk::transaction::VersionedTransaction;
 use std::sync::Arc;
 use std::{env, fmt, str::FromStr};
-use tokio::time::sleep;
-use tokio::time::Duration;
 
+use serde_json::Value;
+use solana_sdk::pubkey;
+use solana_sdk::signer::keypair::Keypair;
+use spl_associated_token_account::get_associated_token_address;
+use spl_associated_token_account::instruction;
 use {
     serde::{Deserialize, Serialize},
     solana_client::nonblocking::rpc_client::RpcClient,
     solana_sdk::{
-        hash::Hash,
         instruction::Instruction,
         pubkey::{ParsePubkeyError, Pubkey},
         signature::Signer,
     },
     std::collections::HashMap,
 };
-
-use crate::chains::solana::solana_chain::{submit, JITO_TIP_AMOUNT};
-use crate::get_associated_token_address;
-use serde_json::Value;
-use solana_sdk::pubkey;
-use solana_sdk::signer::keypair::Keypair;
-use spl_associated_token_account::instruction;
 
 /// A `Result` alias where the `Err` case is `jup_ag::Error`.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -385,7 +380,7 @@ pub async fn swap(swap_request: SwapRequest) -> Result<Swap> {
 }
 
 /// Get swap serialized transaction instructions for a quote
-pub async fn _swap_instructions(swap_request: SwapRequest) -> Result<SwapInstructions> {
+pub async fn swap_instructions(swap_request: SwapRequest) -> Result<SwapInstructions> {
     let url = format!("{}/swap-instructions", quote_api_url());
 
     let response = reqwest::Client::builder()
@@ -463,14 +458,20 @@ impl Memo {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct JupiterSwapInstructions {
+    pub setup_instructions: Vec<Instruction>,
+    pub swap_instructions: Vec<Instruction>,
+}
+
 pub async fn jupiter_swap(
-    _memo: &str,
+    memo: &str,
     rpc_client: &RpcClient,
-    keypair: Arc<Keypair>,
+    fee_payer: Arc<Keypair>,
     swap_mode: SwapMode,
-) -> core::result::Result<(), String> {
-    // Parse the memo JSON
-    let memo = Memo::from_json(&_memo).map_err(|e| format!("Failed to parse memo: {}", e))?;
+    legacy_transaction: bool,
+) -> core::result::Result<JupiterSwapInstructions, String> {
+    let memo = Memo::from_json(memo).map_err(|e| format!("Failed to parse memo: {}", e))?;
 
     let only_direct_routes = false;
     let quotes = quote(
@@ -479,6 +480,7 @@ pub async fn jupiter_swap(
         memo.amount,
         QuoteConfig {
             only_direct_routes,
+            as_legacy_transaction: Some(legacy_transaction),
             swap_mode: Some(swap_mode),
             slippage_bps: Some(memo.slippage_bps),
             ..QuoteConfig::default()
@@ -487,87 +489,65 @@ pub async fn jupiter_swap(
     .await
     .map_err(|e| format!("Failed to get quotes: {}", e))?;
 
-    let user_token_out = get_associated_token_address(&memo.user_account, &memo.token_out);
+    let mut setup_instructions: Vec<Instruction> = vec![];
+    let user_token_out_ata = get_associated_token_address(&memo.user_account, &memo.token_out);
 
     // Check if the user token account exists, and create it if necessary
-    if rpc_client
-        .get_token_account_balance(&user_token_out)
-        .await
-        .is_err()
-    {
-        create_token_account(
+    if rpc_client.get_account(&user_token_out_ata).await.is_err() {
+        let token_program_id = get_token_program_id(rpc_client, &memo.token_out).await?;
+        setup_instructions.push(instruction::create_associated_token_account_idempotent(
+            &fee_payer.pubkey(),
             &memo.user_account,
             &memo.token_out,
-            keypair.clone(),
-            &rpc_client,
-        )
-        .await
-        .map_err(|e| format!("Failed to create token account: {}", e))?;
+            &token_program_id,
+        ))
     }
 
-    let request = SwapRequest::new(keypair.pubkey(), quotes.clone(), user_token_out);
-
-    let Swap {
-        mut swap_transaction,
-        last_valid_block_height: _,
-    } = swap(request)
+    let swap_request = SwapRequest::new(fee_payer.pubkey(), quotes.clone(), user_token_out_ata);
+    let swap_response = swap_instructions(swap_request)
         .await
-        .map_err(|e| format!("Swap failed: {}", e))?;
+        .map_err(|e| format!("Swap creation failed: {}", e))?;
 
-    // Get the latest blockhash
-    let recent_blockhash_for_swap: Hash = rpc_client
-        .get_latest_blockhash()
-        .await
-        .map_err(|e| format!("Failed to get latest blockhash: {}", e))?;
-    swap_transaction
-        .message
-        .set_recent_blockhash(recent_blockhash_for_swap);
-
-    // Sign the swap transaction
-    let swap_transaction = VersionedTransaction::try_new(swap_transaction.message, &[&keypair])
-        .map_err(|e| format!("Failed to create signed transaction: {}", e))?;
-
-    // Send and confirm the transaction
-    loop {
-        match rpc_client
-            .send_and_confirm_transaction_with_spinner(&swap_transaction)
-            .await
-        {
-            Ok(_) => break, // Transaction succeeded, exit loop
-            Err(err) if err.to_string().contains("unable to confirm transaction") => {
-                eprintln!("Transaction failed on jupiter: {}. Retrying...", err);
-                sleep(Duration::from_secs(1)).await; // Adjust delay as needed
-            }
-            Err(err) => {
-                eprintln!("Transaction failed on jupiter: {}", err);
-                break;
-            } // Break on other errors
-        }
+    // Add token ledger instruction if present
+    let mut swap_instructions: Vec<Instruction> = vec![];
+    if let Some(token_ledger_instruction) = swap_response.token_ledger_instruction {
+        swap_instructions.push(token_ledger_instruction);
     }
 
-    Ok(())
+    // Add compute budget instructions
+    swap_instructions.extend(swap_response.compute_budget_instructions);
+
+    // Add setup instructions
+    swap_instructions.extend(swap_response.setup_instructions);
+
+    // Add the swap instruction
+    swap_instructions.push(swap_response.swap_instruction);
+
+    // Add cleanup instruction if present
+    if let Some(cleanup_instruction) = swap_response.cleanup_instruction {
+        swap_instructions.push(cleanup_instruction);
+    }
+
+    Ok(JupiterSwapInstructions {
+        setup_instructions,
+        swap_instructions,
+    })
 }
 
-pub async fn create_token_account(
-    owner: &Pubkey,
-    mint: &Pubkey,
-    fee_payer: Arc<Keypair>,
+async fn get_token_program_id(
     rpc_client: &RpcClient,
-) -> Result<()> {
-    let create_account_ix = instruction::create_associated_token_account(
-        &fee_payer.pubkey(),
-        owner,
-        mint,
-        &pubkey!("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
-    );
+    token_mint: &Pubkey,
+) -> core::result::Result<Pubkey, String> {
+    let mint_account = rpc_client
+        .get_account(token_mint)
+        .await
+        .map_err(|e| format!("Failed to get token mint account: {}", e))?;
 
-    submit(
-        &rpc_client,
-        fee_payer,
-        vec![create_account_ix],
-        JITO_TIP_AMOUNT,
-    )
-    .await
-    .map_err(|e| Error::JupiterApi(format!("Failed to create token account: {}", e)))?;
-    Ok(())
+    if mint_account.owner == spl_token_2022::ID {
+        Ok(spl_token_2022::ID)
+    } else if mint_account.owner == spl_token::ID {
+        Ok(spl_token::ID)
+    } else {
+        Err("Token mint is not owned by Token or Token2022 program".into())
+    }
 }
