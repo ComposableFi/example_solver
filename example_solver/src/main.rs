@@ -262,8 +262,10 @@ async fn handle_result_message(parsed: Value) {
             };
 
             // Log errors if any
-            if let Err(e) = result {
-                eprintln!("Error executing chain handler: {:?}", e);
+            match result {
+                Err(e) => eprintln!("Error spawning chain handler: {:?}", e),
+                Ok(Err(e)) => eprintln!("Error during chain handler execution: {}", e),
+                _ => {}
             }
 
             // Update INTENTS after execution

@@ -186,16 +186,8 @@ pub mod solana_chain {
         if intent.src_chain == intent.dst_chain
             && !token_in.eq_ignore_ascii_case(usdt_contract_address)
         {
-            let token_in_account = get_associated_token_address(
-                &from_keypair.pubkey(),
-                &Pubkey::from_str(&token_in).unwrap(),
-            );
-
-            let amount_in = client
-                .get_token_account_balance(&token_in_account)
-                .await
-                .map(|result| result.amount)
-                .unwrap_or_else(|_| "0".to_string());
+            let mut amount_in = amount.parse::<u64>().unwrap();
+            amount_in -= amount_in / 1000; // Deduct 0.1% fee
 
             let memo = format!(
                 r#"{{"user_account": "{}","token_in": "{}","token_out": "{}","amount": {},"slippage_bps": {}}}"#,
@@ -232,6 +224,7 @@ pub mod solana_chain {
                                 attempts
                             ));
                         }
+                        eprintln!("retrying jupiter_swap because of error: {}", e);
                         // Optional: Add a delay before retrying
                         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     }
@@ -244,10 +237,17 @@ pub mod solana_chain {
         // Submit the combined transaction.
         let result = match submit(&client, from_keypair, tx_instructions, JITO_TIP_AMOUNT).await {
             Ok(tx_hash) => {
-                let _ = send_tx_hash_to_auctioner("http://34.78.217.187:8080", tx_hash).await;
+                if let Err(e) =
+                    send_tx_hash_to_auctioner("http://34.78.217.187:8080", tx_hash).await
+                {
+                    eprintln!("send_tx_hash_to_aucitoner failed: {}", e);
+                }
                 Ok(())
-            } // Transaction succeeded
-            Err(_) => Ok(()), // Return error if transaction fails
+            }
+            Err(e) => {
+                eprintln!("failed to submit transaction: {}", e);
+                Ok(())
+            }
         };
 
         // if intent.src_chain == intent.dst_chain {
@@ -875,7 +875,9 @@ pub mod solana_chain {
             }
         }
         if current_try == RETRIES {
-            println!("Failed to send transaction with the tries, Sending it through RPC Now");
+            println!(
+                "Failed to send transaction with multiple retries. Sending it through RPC now."
+            );
             submit_default(rpc_client, fee_payer, instructions).await
         } else {
             Ok(signature)
