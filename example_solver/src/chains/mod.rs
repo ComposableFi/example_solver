@@ -2,16 +2,16 @@ pub mod ethereum;
 pub mod mantis;
 pub mod solana;
 
-use lazy_static::lazy_static;
-use std::collections::HashMap;
-
 use crate::env;
 use ethers::prelude::*;
 use ethers::signers::LocalWallet;
 use ethers::utils::hash_message;
 use ethers::utils::keccak256;
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solana::solana_chain;
+use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -117,10 +117,7 @@ lazy_static! {
             Blockchain::Ethereum,
             "0xdAC17F958D2ee523a2206206994597C13D831ec7",
         );
-        usdt_addresses.insert(
-            Blockchain::Solana,
-            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-        );
+        usdt_addresses.insert(Blockchain::Solana, solana_chain::USDT_ADDRESS);
         m.insert(
             Token::USDT,
             TokenInfo {

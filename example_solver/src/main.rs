@@ -232,11 +232,13 @@ async fn handle_result_message(parsed: Value) {
 
             let result = if intent.dst_chain == "solana" {
                 tokio::task::spawn_blocking(move || {
-                    tokio::runtime::Handle::current().block_on(handle_solana_execution(
-                        &intent,
-                        &cloned_intent_id,
-                        &cloned_amount,
-                    ))
+                    tokio::runtime::Handle::current()
+                        .block_on(handle_solana_execution(
+                            &intent,
+                            &cloned_intent_id,
+                            &cloned_amount,
+                        ))
+                        .map_err(|e| e.to_string())
                 })
                 .await
             } else if intent.dst_chain == "ethereum" {
@@ -262,8 +264,10 @@ async fn handle_result_message(parsed: Value) {
             };
 
             // Log errors if any
-            if let Err(e) = result {
-                eprintln!("Error executing chain handler: {:?}", e);
+            match result {
+                Err(e) => eprintln!("Error spawning chain handler: {:?}", e),
+                Ok(Err(e)) => eprintln!("Error during chain handler execution: {}", e),
+                _ => {}
             }
 
             // Update INTENTS after execution

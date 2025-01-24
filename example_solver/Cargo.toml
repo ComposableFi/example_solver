@@ -16,6 +16,7 @@ ethers = { version = "2.0.14", default-features = true, features = ["ws","abigen
 hex = "0.4.3"
 spl-associated-token-account = { version = "3.0.2", default-features = false, features = ["no-entrypoint"] }
 spl-token = { version = "3.2.0", default-features = false, features = ["no-entrypoint"] }
+spl-token-2022 = { version = "0.9.0", features = ["no-entrypoint"] }
 solana-client = "1.8.3"
 anchor-client = { version = "0.29.0" }
 solana-sdk = "1.17.30"

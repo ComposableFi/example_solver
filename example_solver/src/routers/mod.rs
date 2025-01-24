@@ -11,6 +11,7 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::Zero;
 use solana::solana_chain::solana_simulate_swap;
+use solana_sdk::system_program;
 use std::collections::HashMap;
 use std::env;
 use std::str::FromStr;
@@ -65,7 +66,7 @@ pub async fn get_simulate_swap_intent(
         OperationOutput::Borrow(_) => todo!(),
     };
 
-    if token_out == "11111111111111111111111111111111" {
+    if token_out == system_program::ID.to_string() {
         sleep(tokio::time::Duration::from_secs(2));
         return String::from("0");
     }
