@@ -1,4 +1,5 @@
-use {crate::routers::jupiter::PrioritizationFeeLamports, serde::Serialize, serde::Serializer};
+use crate::routers::jupiter::PrioritizationFeeLamports;
+use serde::{Serialize, Serializer};
 
 pub fn serialize<S>(
     prioritization_fee_lamports: &PrioritizationFeeLamports,

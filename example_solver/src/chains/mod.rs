@@ -2,29 +2,26 @@ pub mod ethereum;
 pub mod mantis;
 pub mod solana;
 
-use crate::env;
-use ethers::prelude::*;
-use ethers::signers::LocalWallet;
-use ethers::utils::hash_message;
-use ethers::utils::keccak256;
-use lazy_static::lazy_static;
+use std::{
+    collections::HashMap,
+    error::Error,
+    str::FromStr,
+    sync::{Arc, LazyLock},
+};
+
+use ethers::{
+    prelude::*,
+    signers::LocalWallet,
+    utils::{hash_message, keccak256},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use solana::solana_chain;
-use std::collections::HashMap;
-use std::error::Error;
-use std::str::FromStr;
-use std::sync::Arc;
 use strum_macros::EnumString;
 use tokio::sync::RwLock;
+use tracing::instrument;
 
-lazy_static! {
-    // <intent_id, PostIntentInfo>
-    pub static ref INTENTS: Arc<RwLock<HashMap<String, PostIntentInfo>>> = {
-        let m = HashMap::new();
-        Arc::new(RwLock::new(m))
-    };
-}
+pub static INTENTS: LazyLock<Arc<RwLock<HashMap<String, PostIntentInfo>>>> =
+    LazyLock::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SwapTransferInput {
@@ -103,36 +100,30 @@ struct TokenInfo {
     decimals: u32,
 }
 
-pub static SOLVER_ADDRESSES: &[&str] = &[
-    "0x0362110922F923B57b7EfF68eE7A51827b2dF4b4", // ethereum
-    "6zYgJTTuHZZ3G7qNje7RbCSnNtVtGKsxN5YKopPP6cqL", // solana
-];
+static TOKEN_INFO: LazyLock<HashMap<Token, TokenInfo>> = LazyLock::new(|| {
+    [(
+        Token::USDT,
+        TokenInfo {
+            address: [
+                (
+                    Blockchain::Ethereum,
+                    "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+                ),
+                (
+                    Blockchain::Solana,
+                    "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+                ),
+            ]
+            .into_iter()
+            .collect::<HashMap<Blockchain, &str>>(),
+            decimals: 6,
+        },
+    )]
+    .into_iter()
+    .collect::<HashMap<Token, TokenInfo>>()
+});
 
-lazy_static! {
-    static ref TOKEN_INFO: HashMap<Token, TokenInfo> = {
-        let mut m = HashMap::new();
-
-        let mut usdt_addresses = HashMap::new();
-        usdt_addresses.insert(
-            Blockchain::Ethereum,
-            "0xdAC17F958D2ee523a2206206994597C13D831ec7",
-        );
-        usdt_addresses.insert(Blockchain::Solana, solana_chain::USDT_ADDRESS);
-        m.insert(
-            Token::USDT,
-            TokenInfo {
-                address: usdt_addresses,
-                decimals: 6,
-            },
-        );
-
-        m
-    };
-    pub static ref SOLVER_ID: String = env::var("SOLVER_ID").unwrap_or_else(|_| String::from(""));
-    pub static ref SOLVER_PRIVATE_KEY: String =
-        env::var("ETHEREUM_PKEY").unwrap_or_else(|_| String::from(""));
-}
-
+#[instrument(skip_all)]
 pub fn get_token_info(token: &str, blockchain: &str) -> Option<(&'static str, u32)> {
     let token_enum = Token::from_str(token).ok()?;
     let blockchain_enum = Blockchain::from_str(blockchain).ok()?;
@@ -141,9 +132,10 @@ pub fn get_token_info(token: &str, blockchain: &str) -> Option<(&'static str, u3
     Some((address, info.decimals))
 }
 
+#[instrument(skip_all)]
 pub async fn create_keccak256_signature(
     json_data: &mut Value,
-    private_key: String,
+    private_key: &str,
 ) -> Result<(), Box<dyn Error>> {
     let json_str = json_data.to_string();
     let json_bytes = json_str.as_bytes();

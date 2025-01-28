@@ -1,10 +1,7 @@
 pub mod vec {
-    use {
-        serde::{de, Deserializer, Serializer},
-        serde::{Deserialize, Serialize},
-        solana_sdk::pubkey::Pubkey,
-        std::str::FromStr,
-    };
+    use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+    use solana_sdk::pubkey::Pubkey;
+    use std::str::FromStr;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Pubkey>, D::Error>
     where
@@ -30,10 +27,8 @@ pub mod vec {
 }
 
 pub mod option {
-    use {
-        serde::{Serialize, Serializer},
-        solana_sdk::pubkey::Pubkey,
-    };
+    use serde::{Serialize, Serializer};
+    use solana_sdk::pubkey::Pubkey;
 
     pub fn serialize<S>(t: &Option<Pubkey>, serializer: S) -> Result<S::Ok, S::Error>
     where

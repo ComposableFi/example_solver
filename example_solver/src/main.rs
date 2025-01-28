@@ -1,105 +1,141 @@
 mod chains;
+mod envvars;
+mod messages;
 mod routers;
 
-use crate::chains::ethereum::ethereum_chain::handle_ethereum_execution;
-use crate::chains::mantis::mantis_chain::handle_mantis_execution;
-use crate::chains::solana::solana_chain::{handle_solana_execution, SUBMIT_THROUGH_JITO};
-use crate::chains::OperationInput;
-use crate::chains::OperationOutput;
-use crate::chains::PostIntentInfo;
-use crate::chains::INTENTS;
-use crate::chains::SOLVER_ADDRESSES;
-use crate::chains::SOLVER_ID;
-use crate::chains::SOLVER_PRIVATE_KEY;
-use crate::routers::get_simulate_swap_intent;
+use crate::{
+    chains::{
+        ethereum::handle_ethereum_execution, mantis::handle_mantis_execution,
+        solana::handle_solana_execution, OperationInput, OperationOutput, PostIntentInfo, INTENTS,
+    },
+    routers::get_simulate_swap_intent,
+};
+use anyhow::{bail, Error, Result};
 use chains::create_keccak256_signature;
+use envvars::Envvars;
 use ethers::types::U256;
-use futures::stream::SplitSink;
-use futures::{SinkExt, StreamExt};
-use serde_json::json;
-use serde_json::Value;
-use spl_associated_token_account::get_associated_token_address;
-use std::env;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::net::TcpStream;
-use tokio::sync::RwLock;
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::protocol::Message;
-use tokio_tungstenite::MaybeTlsStream;
-use tokio_tungstenite::WebSocketStream;
+use futures::{stream::SplitSink, SinkExt, StreamExt};
+use serde_json::{json, Value};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tokio::{net::TcpStream, sync::RwLock};
+use tokio_tungstenite::{
+    connect_async, tungstenite::protocol::Message, MaybeTlsStream, WebSocketStream,
+};
+use tracing::instrument;
+use tracing_subscriber::{fmt::format::FmtSpan, EnvFilter};
+
+#[derive(Clone)]
+pub(crate) struct Context {
+    pub(crate) envvars: Arc<Envvars>,
+}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     dotenv::dotenv().ok();
-    let is_jito_enabled = env::var("JITO").map(|x| x == "true").unwrap_or(false);
-    SUBMIT_THROUGH_JITO.store(is_jito_enabled, std::sync::atomic::Ordering::SeqCst);
-    let server_addr = env::var("COMPOSABLE_ENDPOINT").unwrap_or_else(|_| String::from(""));
 
-    // Connect to WebSocket
-    let (ws_stream, _) = connect_async(server_addr).await.expect("Failed to connect");
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(false)
+        .with_line_number(false)
+        .with_level(true)
+        .with_ansi(true)
+        .with_span_events(FmtSpan::NONE)
+        .without_time()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new(
+            "info,tower_http=debug,axum::rejection=trace",
+        )))
+        .try_init()
+        .map_err(Error::from_boxed)?;
+
+    let ctx = Context {
+        envvars: Arc::new(envvars::get()?),
+    };
+
+    let (ws_stream, _) = connect_async(&ctx.envvars.auctioneer_ws).await?;
     let (ws_sender, mut ws_receiver) = ws_stream.split();
-
-    // Wrap the sender in an Arc<RwLock> for thread-safe sharing
     let ws_sender = Arc::new(RwLock::new(ws_sender));
 
     // Initial authentication message
     let mut json_data = json!({
         "code": 1,
         "msg": {
-            "solver_id": SOLVER_ID.to_string(),
-            "solver_addresses": SOLVER_ADDRESSES,
+            "solver_id": &ctx.envvars.solver_id,
+            "solver_addresses": ctx.envvars.solver_addresses,
         }
     });
 
-    create_keccak256_signature(&mut json_data, SOLVER_PRIVATE_KEY.to_string())
+    create_keccak256_signature(&mut json_data, &ctx.envvars.ethereum_key)
         .await
-        .expect("Failed to sign message");
+        .map_err(|err| anyhow::anyhow!("{}", err))?;
 
-    if json_data.get("code").unwrap() == "0" {
-        println!("Authentication failed: {:#?}", json_data);
-        return;
+    if json_data.get("code").is_some_and(|code| code == "0") {
+        tracing::error!("Authentication failed: {:#?}", json_data);
+        bail!("Authentication failed: {:#?}", json_data);
     }
 
-    // Send the initial message
     {
-        let mut ws_sender_locked = ws_sender.write().await;
-        ws_sender_locked
-            .send(Message::Text(json_data.to_string()))
+        ws_sender
+            .write()
             .await
-            .expect("Failed to send initial message");
+            .send(Message::Text(json_data.to_string()))
+            .await?;
     }
 
-    // Handle incoming messages
     while let Some(msg) = ws_receiver.next().await {
-        let ws_sender = Arc::clone(&ws_sender);
+        let ws_sender = ws_sender.clone();
+        let ctx = ctx.clone();
+
         tokio::spawn(async move {
             match msg {
                 Ok(Message::Text(text)) => {
-                    let parsed: Value = serde_json::from_str(&text).unwrap();
-                    let code = parsed.get("code").unwrap().as_u64().unwrap();
+                    let parsed = match serde_json::from_str::<Value>(&text) {
+                        Ok(val) => val,
+                        Err(err) => {
+                            tracing::error!("Unable to parse WebSocket message: {}", err);
+                            return;
+                        }
+                    };
 
-                    println!("{:#?}", parsed);
+                    let code = match parsed.get("code").and_then(|x| x.as_u64()) {
+                        Some(val) => val,
+                        None => {
+                            tracing::error!("Unable to parse code value from WebSocket message");
+                            return;
+                        }
+                    };
+
+                    tracing::info!("{:#?}", parsed);
 
                     if code == 1 {
-                        handle_auction_message(parsed, ws_sender).await;
+                        handle_auction_message(ctx, parsed, ws_sender).await;
                     } else if code == 4 {
-                        handle_result_message(parsed).await;
+                        handle_result_message(ctx, parsed).await;
                     }
                 }
-                Ok(Message::Close(_)) | Err(_) => {
-                    println!("WebSocket closed or error occurred.");
+                Ok(Message::Close(_)) => {
+                    tracing::warn!("WebSocket loop closed");
+                }
+                Err(err) => {
+                    tracing::error!("WebSocket loop error: {}", err);
                 }
                 _ => {}
             }
         });
     }
 
-    println!("Auctioneer went down, please reconnect");
+    tracing::warn!("Auctioneer went down, please reconnect");
+
+    Ok(())
 }
 
 /// Handle "participate auction" messages (code 1)
+#[instrument(skip_all)]
 async fn handle_auction_message(
+    ctx: Context,
     parsed: Value,
     ws_sender: Arc<RwLock<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
 ) {
@@ -126,18 +162,18 @@ async fn handle_auction_message(
             .as_secs();
 
         let ok = if current_time >= timeout {
-            println!("current_time >= intent.timestamp: impossible to solve {intent_id}");
+            tracing::info!("current_time >= intent.timestamp: impossible to solve {intent_id}");
             false
         } else if intent_info.src_chain == intent_info.dst_chain {
             if timeout - current_time < 30 {
-                println!("timeout - current_time < 30: not willing to solve {intent_id}");
+                tracing::info!("timeout - current_time < 30: not willing to solve {intent_id}");
                 false
             } else {
                 true
             }
         } else {
             if timeout - current_time < 1800 {
-                println!("timeout - current_time < 30mins on cross-chain: not willing to solve {intent_id}");
+                tracing::info!("timeout - current_time < 30mins on cross-chain: not willing to solve {intent_id}");
                 false
             } else {
                 true
@@ -146,6 +182,7 @@ async fn handle_auction_message(
 
         if ok {
             let final_amount = get_simulate_swap_intent(
+                ctx.clone(),
                 &intent_info,
                 &intent_info.src_chain,
                 &intent_info.dst_chain,
@@ -160,7 +197,7 @@ async fn handle_auction_message(
 
             let final_amount = U256::from_dec_str(&final_amount).unwrap();
 
-            println!(
+            tracing::info!(
                 "User wants {amount_out_min} token_out, you can provide {final_amount} token_out (after FLAT_FEES + COMMISSION)"
             );
 
@@ -169,35 +206,37 @@ async fn handle_auction_message(
                     "code": 2,
                     "msg": {
                         "intent_id": intent_id,
-                        "solver_id": SOLVER_ID.to_string(),
-                        "amount": final_amount.to_string()
+                        "solver_id": &ctx.envvars.solver_id,
+                        "amount": &final_amount
                     }
                 });
 
-                create_keccak256_signature(&mut json_data, SOLVER_PRIVATE_KEY.to_string())
+                create_keccak256_signature(&mut json_data, &ctx.envvars.ethereum_key)
                     .await
                     .unwrap();
 
                 {
-                    let mut ws_sender_locked = ws_sender.write().await;
-                    ws_sender_locked
+                    ws_sender
+                        .write()
+                        .await
                         .send(Message::text(json_data.to_string()))
                         .await
                         .expect("Failed to send message");
-                    drop(ws_sender_locked);
                 }
 
                 {
-                    let mut intents = INTENTS.write().await;
-                    intents.insert(intent_id.to_string(), intent_info);
-                    drop(intents);
+                    INTENTS
+                        .write()
+                        .await
+                        .insert(intent_id.to_string(), intent_info);
                 }
             }
         }
     }
 }
 
-async fn handle_result_message(parsed: Value) {
+#[instrument(skip_all)]
+async fn handle_result_message(ctx: Context, parsed: Value) {
     let intent_id = parsed
         .get("msg")
         .and_then(|msg| msg.get("intent_id"))
@@ -231,19 +270,21 @@ async fn handle_result_message(parsed: Value) {
             }
 
             let result = if intent.dst_chain == "solana" {
-                tokio::task::spawn_blocking(move || {
-                    tokio::runtime::Handle::current()
-                        .block_on(handle_solana_execution(
-                            &intent,
-                            &cloned_intent_id,
-                            &cloned_amount,
-                        ))
-                        .map_err(|e| e.to_string())
+                let res = tokio::task::spawn_blocking(move || {
+                    tokio::runtime::Handle::current().block_on(handle_solana_execution(
+                        ctx.clone(),
+                        &intent,
+                        &cloned_intent_id,
+                        &cloned_amount,
+                    ))
                 })
-                .await
+                .await;
+
+                res.map(|x| x.map_err(|x| x.to_string()))
             } else if intent.dst_chain == "ethereum" {
                 tokio::task::spawn_blocking(move || {
                     tokio::runtime::Handle::current().block_on(handle_ethereum_execution(
+                        ctx.clone(),
                         &intent,
                         &cloned_intent_id,
                         &cloned_amount,
@@ -253,6 +294,7 @@ async fn handle_result_message(parsed: Value) {
             } else if intent.dst_chain == "mantis" {
                 tokio::task::spawn_blocking(move || {
                     tokio::runtime::Handle::current().block_on(handle_mantis_execution(
+                        ctx.clone(),
                         &intent,
                         &cloned_intent_id,
                         &cloned_amount,
@@ -265,8 +307,8 @@ async fn handle_result_message(parsed: Value) {
 
             // Log errors if any
             match result {
-                Err(e) => eprintln!("Error spawning chain handler: {:?}", e),
-                Ok(Err(e)) => eprintln!("Error during chain handler execution: {}", e),
+                Err(e) => tracing::error!("Error spawning chain handler: {:?}", e),
+                Ok(Err(e)) => tracing::error!("Error during chain handler execution: {}", e),
                 _ => {}
             }
 

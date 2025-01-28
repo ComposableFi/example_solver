@@ -1,45 +1,55 @@
 pub mod jupiter;
 pub mod paraswap;
 
-// use ethers::providers::Middleware;
-// use serde_json::Value;
-use crate::chains::*;
-use crate::PostIntentInfo;
-use ethereum::ethereum_chain::ethereum_simulate_swap;
-use lazy_static::lazy_static;
+use crate::{chains::*, Context, PostIntentInfo};
+use ethereum::ethereum_simulate_swap;
 use num_bigint::BigInt;
-use num_traits::ToPrimitive;
-use num_traits::Zero;
-use solana::solana_chain::solana_simulate_swap;
+use num_traits::{ToPrimitive, Zero};
+use solana::solana_simulate_swap;
 use solana_sdk::system_program;
-use std::collections::HashMap;
-use std::env;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::thread::sleep;
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::{Arc, LazyLock},
+    thread::sleep,
+};
 use tokio::sync::RwLock;
+use tracing::instrument;
 
-lazy_static! {
-    // <(src_chain, dst_chain), (src_chain_cost, dst_chain_cost)> // cost in USDT
-    pub static ref FLAT_FEES: Arc<RwLock<HashMap<(String, String), (u32, u32)>>> = {
-        let mut m = HashMap::new();
-        m.insert(("ethereum".to_string(), "ethereum".to_string()), (0, 0));       // 0$ 3$
-        m.insert(("solana".to_string(), "solana".to_string()), (0, 0));            // 0$ 0.2$
-        m.insert(("ethereum".to_string(), "solana".to_string()), (0, 0));    // 1$ 0.1$
-        m.insert(("solana".to_string(), "ethereum".to_string()), (0, 0));    // 0.1$ 2$
-        Arc::new(RwLock::new(m))
-    };
+pub static FLAT_FEES: LazyLock<Arc<RwLock<HashMap<(&str, &str), (u32, u32)>>>> =
+    LazyLock::new(|| {
+        Arc::new(RwLock::new(
+            [
+                (("ethereum", "ethereum"), (0, 0)),
+                (("solana", "solana"), (0, 0)),
+                (("ethereum", "solana"), (0, 0)),
+                (("solana", "ethereum"), (0, 0)),
+            ]
+            .into_iter()
+            .collect::<HashMap<(&str, &str), (u32, u32)>>(),
+        ))
+    });
 
-    // <mantis_token, solana_token>
-    pub static ref MANTIS_TOKENS: Arc<RwLock<HashMap<String, String>>> = {
-        let mut m = HashMap::new();
-        m.insert("CpHLZarS6tobQTDQSKtnXCQWd1YcfSDL7UMgmjcVNjTb".to_string(), "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3".to_string()); // SLERF (test, not the IBC-SLERF)
-        m.insert("9fJw9rQdMi8QEJnBsybVKU7XTXBUTXVKpinDaYMsVSUS".to_string(), "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB".to_string()); // USDT (test, not the IBC-USDT)
-        Arc::new(RwLock::new(m))
-    };
-}
+pub static MANTIS_TOKENS: LazyLock<Arc<RwLock<HashMap<&str, &str>>>> = LazyLock::new(|| {
+    Arc::new(RwLock::new(
+        [
+            (
+                "CpHLZarS6tobQTDQSKtnXCQWd1YcfSDL7UMgmjcVNjTb",
+                "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3",
+            ),
+            (
+                "9fJw9rQdMi8QEJnBsybVKU7XTXBUTXVKpinDaYMsVSUS",
+                "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+            ),
+        ]
+        .into_iter()
+        .collect::<HashMap<&str, &str>>(),
+    ))
+});
 
+#[instrument(skip_all)]
 pub async fn get_simulate_swap_intent(
+    ctx: Context,
     intent_info: &PostIntentInfo,
     mut src_chain: &str,
     mut dst_chain: &str,
@@ -74,10 +84,10 @@ pub async fn get_simulate_swap_intent(
     if src_chain == "mantis" {
         let tokens = MANTIS_TOKENS.read().await;
 
-        if let Some(token_mantis) = tokens.get(&token_in) {
-            token_in = token_mantis.clone();
+        if let Some(token_mantis) = tokens.get(token_in.as_str()) {
+            token_in = token_mantis.to_string();
         } else {
-            println!("Token {token_in} not supported, please include it on MANTIS_TOKENS");
+            tracing::warn!("Token {token_in} not supported, please include it on MANTIS_TOKENS");
         }
 
         src_chain = "solana";
@@ -86,10 +96,10 @@ pub async fn get_simulate_swap_intent(
     if dst_chain == "mantis" {
         let tokens = MANTIS_TOKENS.read().await;
 
-        if let Some(token_mantis) = tokens.get(&token_out) {
-            token_out = token_mantis.clone();
+        if let Some(token_mantis) = tokens.get(token_out.as_str()) {
+            token_out = token_mantis.to_string();
         } else {
-            println!("Token {token_out} not supported, please include it on MANTIS_TOKENS");
+            tracing::warn!("Token {token_out} not supported, please include it on MANTIS_TOKENS");
         }
 
         dst_chain = "solana";
@@ -101,19 +111,24 @@ pub async fn get_simulate_swap_intent(
     if !bridge_token_address_src.eq_ignore_ascii_case(&token_in) {
         // simulate token_in -> USDT
         if src_chain == "ethereum" {
-            amount_out_src_chain =
-                ethereum_simulate_swap(&token_in, &amount_in, bridge_token_address_src).await;
+            amount_out_src_chain = ethereum_simulate_swap(
+                ctx.clone(),
+                &token_in,
+                &amount_in,
+                bridge_token_address_src,
+            )
+            .await;
         } else if src_chain == "solana" || src_chain == "mantis" {
             if src_chain == "mantis" {
                 let tokens = MANTIS_TOKENS.read().await;
 
-                match tokens.get(&token_in) {
+                match tokens.get(token_in.as_str()) {
                     Some(_token_in) => {
-                        token_in = _token_in.clone();
+                        token_in = _token_in.to_string();
                     }
                     None => {
                         amount_out_src_chain = BigInt::zero();
-                        eprintln!("Update MANTIS_TOKENS global variable <mantis_token ({token_in}), solana_token>");
+                        tracing::error!("Update MANTIS_TOKENS global variable <mantis_token ({token_in}), solana_token>");
                     }
                 }
             }
@@ -139,18 +154,10 @@ pub async fn get_simulate_swap_intent(
     let flat_fees;
     {
         let fees = FLAT_FEES.read().await;
-        flat_fees = fees
-            .get(&(src_chain.to_string(), dst_chain.to_string()))
-            .unwrap()
-            .clone();
-        drop(fees);
+        flat_fees = fees.get(&(&src_chain, &dst_chain)).unwrap().clone();
     }
 
-    // get comission
-    let comission = env::var("COMISSION")
-        .expect("COMISSION must be set")
-        .parse::<u32>()
-        .unwrap();
+    let comission = ctx.envvars.comission;
 
     if amount_out_src_chain
         < BigInt::from(flat_fees.0 + flat_fees.1 + (&amount_out_src_chain * comission) / 100)
@@ -170,21 +177,25 @@ pub async fn get_simulate_swap_intent(
     {
         // simulate USDT -> token_out
         if dst_chain == "ethereum" {
-            final_amount_out =
-                ethereum_simulate_swap(bridge_token_address_dst, &final_amount_out, &token_out)
-                    .await
-                    .to_string();
+            final_amount_out = ethereum_simulate_swap(
+                ctx.clone(),
+                bridge_token_address_dst,
+                &final_amount_out,
+                &token_out,
+            )
+            .await
+            .to_string();
         } else if dst_chain == "solana" || dst_chain == "mantis" {
             if src_chain == "mantis" {
                 let tokens = MANTIS_TOKENS.read().await;
 
-                match tokens.get(&token_out) {
+                match tokens.get(token_out.as_str()) {
                     Some(_token_out) => {
-                        token_out = _token_out.clone();
+                        token_out = _token_out.to_string();
                     }
                     None => {
                         final_amount_out = "0".to_string();
-                        eprintln!("Update MANTIS_TOKENS global variable <mantis_token ({token_in}), solana_token>");
+                        tracing::error!("Update MANTIS_TOKENS global variable <mantis_token ({token_in}), solana_token>");
                     }
                 }
             }
@@ -203,14 +214,3 @@ pub async fn get_simulate_swap_intent(
 
     final_amount_out
 }
-
-// Calculation ethereum gas fees
-// let url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd";
-// let response: Value = reqwest::get(url).await.unwrap().json().await.unwrap();
-// let eth_price = response["ethereum"]["usd"].as_f64().unwrap().round();
-// let gas_price = provider.get_gas_price().await.unwrap().as_u128() as f64;
-// let gas =  295000f64;
-// let flat_fees = (eth_price * ((gas * gas_price) / 1e18)) as f64;
-
-// let profit = (amount_out_src_chain.to_f64().unwrap() / 10f64.powi(bridge_token_dec_src as i32))
-//     - (amount_in_dst_chain.to_f64().unwrap() / 10f64.powi(bridge_token_dec_dst as i32));
